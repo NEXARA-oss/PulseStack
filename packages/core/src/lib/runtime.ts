@@ -3,7 +3,11 @@ import { executionRequestSchema, executionSnapshotSchema, traceSpanSchema } from
 import { createEvent, publishEvent } from './events.js';
 import { createId } from './ids.js';
 import type { PulseInfra } from './infra.js';
+
 import type { PulsePluginModule } from './plugins.js';
+
+import { validateWorkflowDag } from './workflow-validation.js';
+
 
 type StepResult = {
   stepId: string;
@@ -21,6 +25,7 @@ export class WorkflowRuntime {
 
   async execute(requestInput: ExecutionRequest) {
     const request = executionRequestSchema.parse(requestInput);
+    validateWorkflowDag(request.workflow);
     const executionId = createId('exec');
     const traceId = createId('trace');
     await this.infra.persistWorkflow(request.workflow);

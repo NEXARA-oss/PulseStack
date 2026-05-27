@@ -331,8 +331,14 @@ MIT License
 ---
 
 # PulseStack
-
 Building observability infrastructure for the next generation of autonomous systems.
+
+
+# credits 
+@sreerevanth - collaborater 
+             - initial design 
+             - system design 
+             - founder of the idea 
 
 ```
 ```
