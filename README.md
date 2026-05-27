@@ -171,6 +171,9 @@ proto/
   pulsestack.proto
 ```
 
+For a deeper contributor-oriented view of the runtime internals, see
+[PulseStack Distributed Runtime Architecture](docs/architecture/distributed-runtime.md).
+
 ---
 
 # Tech Stack
@@ -365,8 +368,14 @@ MIT License
 ---
 
 # PulseStack
-
 Building observability infrastructure for the next generation of autonomous systems.
+
+
+# credits 
+@sreerevanth - collaborater 
+             - initial design 
+             - system design 
+             - founder of the idea 
 
 ```
 

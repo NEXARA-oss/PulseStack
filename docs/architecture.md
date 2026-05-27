@@ -21,6 +21,10 @@ PulseStack is organized as a TypeScript monorepo with shared contracts, a shared
 4. Trace spans are stored in ClickHouse for timeline analysis and latency aggregation.
 5. `pulse-replay` reads stored snapshots and reconstructs a deterministic replay state with a diff against the original output.
 
+## Workflow DAG Validation
+
+`WorkflowRuntime.execute()` validates every workflow definition before creating an execution. The reusable validator checks for duplicate step IDs, missing dependency references, missing entry nodes, dependency cycles, and disconnected steps. Invalid workflows raise `WorkflowValidationError` with structured issue objects so API callers can map the failure back to specific step IDs and dependency paths.
+
 ## Storage
 
 - PostgreSQL: workflow metadata, executions, replay snapshots.
