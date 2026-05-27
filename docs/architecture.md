@@ -21,9 +21,26 @@ PulseStack is organized as a TypeScript monorepo with shared contracts, a shared
 4. Trace spans are stored in ClickHouse for timeline analysis and latency aggregation.
 5. `pulse-replay` reads stored snapshots and reconstructs a deterministic replay state with a diff against the original output.
 
+
+## Plugin Event Flow
+
+PulseStack loads local plugins from `PLUGIN_DIR` during `pulse-events` and `pulse-runtime` startup. Each plugin directory must include a `plugin.json` manifest and an entrypoint module that may export `onEvent(event, context)`.
+
+When a service calls `publishEvent()`, the event is still persisted to NATS, Redis Streams, and ClickHouse first. After persistence succeeds, PulseStack dispatches the same event to loaded plugins that implement `onEvent`. Plugin failures are isolated with `Promise.allSettled()` and logged with the plugin name, event type, and error message so one extension cannot crash the runtime request path.
+
+Local development flow:
+
+1. Create a directory under `plugins/`.
+2. Add `plugin.json` with `name`, `version`, `entrypoint`, and `capabilities`.
+3. Export `onEvent` from the entrypoint.
+4. Start services with `PLUGIN_DIR=./plugins`.
+
+The bundled `plugins/audit-log` plugin logs every dispatched event and can be used as a minimal event-handler template.
+
 ## Workflow DAG Validation
 
 `WorkflowRuntime.execute()` validates every workflow definition before creating an execution. The reusable validator checks for duplicate step IDs, missing dependency references, missing entry nodes, dependency cycles, and disconnected steps. Invalid workflows raise `WorkflowValidationError` with structured issue objects so API callers can map the failure back to specific step IDs and dependency paths.
+
 
 ## Storage
 

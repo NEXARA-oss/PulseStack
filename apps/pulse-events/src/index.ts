@@ -1,14 +1,15 @@
 import type { WebsocketHandler } from '@fastify/websocket';
-import { createBaseServer, createEvent, loadEnv, publishEvent, PulseInfra } from '@pulsestack/core';
+import { createBaseServer, createEvent, loadEnv, loadPlugins, publishEvent, PulseInfra } from '@pulsestack/core';
 import { eventEnvelopeSchema, eventTypeSchema, type EventType } from '@pulsestack/contracts';
 
 const env = loadEnv();
 const infra = new PulseInfra();
+const plugins = await loadPlugins();
 const app = await createBaseServer('pulse-events');
 
 app.post('/ingest', async (request) => {
   const event = eventEnvelopeSchema.parse(request.body);
-  await publishEvent(infra, event);
+  await publishEvent(infra, event, { plugins, service: 'pulse-events' });
   return { accepted: true, id: event.id };
 });
 
@@ -21,7 +22,7 @@ app.post<{ Params: { type: string }; Body: Record<string, unknown> }>('/emit/:ty
     correlationId: request.headers['x-correlation-id']?.toString() ?? 'manual',
     payload: request.body ?? {},
   });
-  await publishEvent(infra, event);
+  await publishEvent(infra, event, { plugins, service: 'pulse-events' });
   return event;
 });
 

@@ -1,10 +1,15 @@
 import { access, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { pluginManifestSchema, type EventEnvelope } from '@pulsestack/contracts';
+import { pathToFileURL } from 'node:url';
+import { pluginManifestSchema, type EventEnvelope, type PluginManifest } from '@pulsestack/contracts';
 import { loadEnv } from './config.js';
 
 export interface PulsePluginModule {
-  onEvent?(event: EventEnvelope): Promise<void> | void;
+  manifest?: PluginManifest;
+  onEvent?(
+    event: EventEnvelope,
+    context: { service: string; tenantId: string },
+  ): Promise<void> | void;
 }
 
 export async function loadPlugins() {
@@ -17,13 +22,39 @@ export async function loadPlugins() {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const manifestPath = path.join(pluginDir, entry.name, 'plugin.json');
-    const manifestJson = await import(manifestPath, { with: { type: 'json' } }).catch(() => null);
+    const manifestJson = await import(pathToFileURL(manifestPath).href, { with: { type: 'json' } }).catch(() => null);
     if (!manifestJson) continue;
     const manifest = pluginManifestSchema.parse(manifestJson.default);
     const modulePath = path.join(pluginDir, entry.name, manifest.entrypoint);
-    const mod = (await import(modulePath)) as PulsePluginModule;
-    loaded.push(mod);
+    const mod = (await import(pathToFileURL(modulePath).href)) as PulsePluginModule;
+    loaded.push({ ...mod, manifest });
   }
 
   return loaded;
+}
+
+export async function dispatchEventToPlugins(
+  plugins: PulsePluginModule[],
+  event: EventEnvelope,
+  context: { service: string },
+) {
+  const handlers = plugins.filter((plugin) => typeof plugin.onEvent === 'function');
+  const results = await Promise.allSettled(
+    handlers.map((plugin) =>
+      plugin.onEvent?.(event, {
+        service: context.service,
+        tenantId: event.tenantId,
+      }),
+    ),
+  );
+
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.warn('[plugin:error]', {
+        plugin: handlers[index]?.manifest?.name ?? 'unknown',
+        eventType: event.type,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    }
+  });
 }

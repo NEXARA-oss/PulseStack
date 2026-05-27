@@ -1,9 +1,13 @@
-import type { ExecutionRequest, ExecutionSnapshot, TraceSpan, WorkflowStep } from '@pulsestack/contracts';
+import type { EventEnvelope, ExecutionRequest, ExecutionSnapshot, TraceSpan, WorkflowStep } from '@pulsestack/contracts';
 import { executionRequestSchema, executionSnapshotSchema, traceSpanSchema } from '@pulsestack/contracts';
 import { createEvent, publishEvent } from './events.js';
 import { createId } from './ids.js';
 import type { PulseInfra } from './infra.js';
+
+import type { PulsePluginModule } from './plugins.js';
+
 import { validateWorkflowDag } from './workflow-validation.js';
+
 
 type StepResult = {
   stepId: string;
@@ -13,7 +17,11 @@ type StepResult = {
 };
 
 export class WorkflowRuntime {
-  constructor(private readonly infra: PulseInfra, private readonly source = 'pulse-runtime') {}
+  constructor(
+    private readonly infra: PulseInfra,
+    private readonly source = 'pulse-runtime',
+    private readonly plugins: PulsePluginModule[] = [],
+  ) {}
 
   async execute(requestInput: ExecutionRequest) {
     const request = executionRequestSchema.parse(requestInput);
@@ -29,8 +37,7 @@ export class WorkflowRuntime {
       input: request.input,
     });
 
-    await publishEvent(
-      this.infra,
+    await this.publish(
       createEvent({
         type: 'workflow.started',
         source: this.source,
@@ -85,8 +92,7 @@ export class WorkflowRuntime {
     };
 
     await this.infra.completeExecution(executionId, 'completed', output);
-    await publishEvent(
-      this.infra,
+    await this.publish(
       createEvent({
         type: 'workflow.completed',
         source: this.source,
@@ -101,11 +107,14 @@ export class WorkflowRuntime {
     return { executionId, traceId, output };
   }
 
+  private async publish(event: EventEnvelope) {
+    await publishEvent(this.infra, event, { plugins: this.plugins, service: this.source });
+  }
+
   private async runStep(step: WorkflowStep, state: Record<string, unknown>, correlationId: string): Promise<StepResult> {
     const timestamp = new Date().toISOString();
     if (step.kind === 'tool') {
-      await publishEvent(
-        this.infra,
+      await this.publish(
         createEvent({
           type: 'tool.called',
           source: this.source,
@@ -116,8 +125,7 @@ export class WorkflowRuntime {
       );
     }
     if (step.kind === 'llm') {
-      await publishEvent(
-        this.infra,
+      await this.publish(
         createEvent({
           type: 'llm.requested',
           source: this.source,
@@ -182,8 +190,7 @@ export class WorkflowRuntime {
       error: null,
     });
     await this.infra.writeSpan(span);
-    await publishEvent(
-      this.infra,
+    await this.publish(
       createEvent({
         type: 'span.recorded',
         source: this.source,
