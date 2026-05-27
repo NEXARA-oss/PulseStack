@@ -1,0 +1,68 @@
+name: Bug Report
+description: File a bug report to help us improve PulseStack
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! 
+        Please provide as much information as possible to help us reproduce the issue.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary of the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Start PulseStack with '...'
+        2. Trigger event '...'
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment details
+      description: Information about your setup.
+      value: |
+        - OS: 
+        - Node.js version: 
+        - Kubernetes version (if applicable):
+        - PulseStack version: 
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs/screenshots
+      description: Add any context, screenshots, or logs about the problem here. Please use markdown code blocks for logs.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Optional workflow/runtime context
+      description: Any specific workflow, runtime details, or trace IDs if applicable.
+    validations:
+      required: false
