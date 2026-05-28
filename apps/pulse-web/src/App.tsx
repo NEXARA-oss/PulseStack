@@ -8,6 +8,18 @@ import { fetchJson } from './lib/api';
 import { useUiStore } from './store/ui';
 
 type Execution = { id: string; workflow_id: string; status: string; updated_at: string };
+type MetricsSummary = {
+  events: Array<{ type: string; total: number }>;
+  latency: Array<{ kind: string; avg_latency_ms: number }>;
+  executions: {
+    total: number;
+    succeeded: number;
+    failed: number;
+    successRate: number;
+    byStatus: Array<{ status: string; total: number }>;
+    recent: Execution[];
+  };
+};
 
 export default function App() {
   const selectedExecutionId = useUiStore((state) => state.selectedExecutionId);
@@ -26,7 +38,7 @@ export default function App() {
 
   const metrics = useQuery({
     queryKey: ['metrics'],
-    queryFn: () => fetchJson<{ events: Array<{ type: string; total: number }>; latency: Array<{ kind: string; avg_latency_ms: number }> }>('/api/metrics/summary'),
+    queryFn: () => fetchJson<MetricsSummary>('/api/metrics/summary'),
     refetchInterval: 5000,
   });
 
@@ -57,6 +69,14 @@ export default function App() {
       })),
     [dag.data],
   );
+  const successRate = Math.round((metrics.data?.executions.successRate ?? 0) * 100);
+  const averageLatency =
+    metrics.data?.latency.length && metrics.data.latency.length > 0
+      ? Math.round(
+          metrics.data.latency.reduce((sum, item) => sum + Number(item.avg_latency_ms ?? 0), 0) /
+            metrics.data.latency.length,
+        )
+      : 0;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(86,219,255,0.15),_transparent_40%),linear-gradient(180deg,#040814,#09111f_45%,#02050b)] px-4 py-6 text-white">
@@ -83,6 +103,25 @@ export default function App() {
         </Panel>
 
         <div className="grid gap-4">
+          <div className="grid gap-3 md:grid-cols-4">
+            <Panel title="Total Runs">
+              <div className="font-mono text-3xl font-semibold text-cyan">{metrics.data?.executions.total ?? 0}</div>
+              <div className="text-xs uppercase text-white/50">tracked executions</div>
+            </Panel>
+            <Panel title="Success Rate">
+              <div className="font-mono text-3xl font-semibold text-mint">{successRate}%</div>
+              <div className="text-xs uppercase text-white/50">{metrics.data?.executions.succeeded ?? 0} succeeded</div>
+            </Panel>
+            <Panel title="Failed Runs">
+              <div className="font-mono text-3xl font-semibold text-rose-300">{metrics.data?.executions.failed ?? 0}</div>
+              <div className="text-xs uppercase text-white/50">needs attention</div>
+            </Panel>
+            <Panel title="Avg Latency">
+              <div className="font-mono text-3xl font-semibold text-white">{averageLatency}ms</div>
+              <div className="text-xs uppercase text-white/50">trace spans</div>
+            </Panel>
+          </div>
+
           <Panel title="Execution DAG">
             <div className="h-[420px] overflow-hidden rounded-xl border border-white/10">
               <ReactFlow nodes={nodes} edges={dag.data?.edges ?? []} fitView>
@@ -125,6 +164,17 @@ export default function App() {
                 <div key={item.kind} className="flex justify-between rounded-lg bg-white/5 px-3 py-2">
                   <span>{item.kind}</span>
                   <span className="font-mono">{Math.round(item.avg_latency_ms ?? 0)}ms</span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel title="Execution Status">
+            <div className="space-y-2">
+              {metrics.data?.executions.byStatus.map((item) => (
+                <div key={item.status} className="flex justify-between rounded-lg bg-white/5 px-3 py-2">
+                  <span>{item.status}</span>
+                  <span className="font-mono">{item.total}</span>
                 </div>
               ))}
             </div>
