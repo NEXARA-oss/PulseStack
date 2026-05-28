@@ -1,19 +1,23 @@
 ---
 name: Documentation Issue
-about: Report unclear, missing, or outdated documentation
-title: "[Docs]: "
+about: Formally report inaccuracies, omissions, or ambiguities in the PulseStack documentation
+title: "[Docs]: <Brief description of the documentation issue>"
 labels: documentation, triage
 assignees: ''
 ---
 
-**Which docs page or section is affected?**
-Provide the URL or file path.
+## Affected Documentation
+<!-- Please provide the exact URL(s) or relative file path(s) of the affected documentation. -->
+- **URL/File Path:** `...`
 
-**What is unclear, missing, or outdated?**
-Explain the problem with the current documentation.
+## Description of the Issue
+<!-- Formally articulate what is incorrect, missing, or conceptually unclear in the specified documentation. -->
 
-**Suggested correction**
-If you have a specific suggestion or rewrite, please share it here.
+## Suggested Corrections
+<!-- If you possess the correct information, please provide a draft of the proposed changes or specify exactly what needs to be rewritten. -->
 
-**Additional context**
-Any additional information or screenshots that would help us address the issue.
+## Technical Context
+<!-- If this documentation error caused operational confusion or a deployment failure, please describe the context briefly so we can better understand the impact. -->
+
+## Relevant Code Modules (Optional)
+<!-- If the documentation is out of sync with a specific module or API endpoint, please reference it here. -->

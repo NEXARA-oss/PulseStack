@@ -1,22 +1,30 @@
 ---
 name: Feature Request
-about: Suggest an idea for PulseStack
-title: "[Feature]: "
+about: Formally propose an enhancement or new capability for PulseStack
+title: "[Feature]: <Brief description of the proposed feature>"
 labels: feature, triage
 assignees: ''
 ---
 
-**Problem statement**
-Is your feature request related to a problem? Please describe it.
+## Problem Statement
+<!-- Clearly articulate the business or technical problem this feature will solve. Include context on why the current capabilities of PulseStack are insufficient for this use case. -->
 
-**Proposed solution**
-A clear and concise description of what you want to happen.
+## Proposed Solution
+<!-- Provide a detailed explanation of the proposed feature. Discuss the intended architecture, user experience, and technical approach required to implement it. -->
 
-**Alternatives considered**
-A clear and concise description of any alternative solutions or features you've considered.
+## Impact on Observability and Runtime
+<!-- PulseStack is an observability and runtime intelligence platform. Explain how this feature enhances telemetry, data collection, distributed systems monitoring, or runtime automation. -->
 
-**Why this would help PulseStack**
-How does this align with PulseStack's goals for observability and runtime intelligence?
+## Alternatives Evaluated
+<!-- Detail any alternative approaches, workarounds, or architectural designs you considered, and formally explain why they were rejected in favor of your proposed solution. -->
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+## Technical Requirements & Dependencies
+<!-- Outline any external libraries, infrastructure changes, or architectural shifts required to support this feature. -->
+
+## Acceptance Criteria
+<!-- Define what constitutes a successful implementation of this feature. -->
+- [ ] Criteria 1
+- [ ] Criteria 2
+
+## Additional Context & Diagrams
+<!-- If applicable, include architectural diagrams, flowcharts, or further context to illustrate the proposal. -->
