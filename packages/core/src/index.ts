@@ -7,5 +7,6 @@ export * from './lib/runtime.js';
 export * from './lib/workflow-validation.js';
 export * from './lib/replay.js';
 export * from './lib/plugins.js';
+export * from './lib/rbac.js';
 export * from './lib/server.js';
 export * from './lib/tracing.js';
