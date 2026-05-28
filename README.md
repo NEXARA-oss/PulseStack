@@ -1,4 +1,3 @@
-
 # PulseStack
 
 <p align="center">
@@ -22,6 +21,7 @@
 Modern AI systems are no longer single prompts.
 
 They are:
+
 - multi-agent workflows
 - distributed automation pipelines
 - tool-calling runtimes
@@ -29,11 +29,13 @@ They are:
 - long-running autonomous systems
 
 But current observability tooling was built for:
+
 - REST APIs
 - microservices
 - traditional backend systems
 
 Not for:
+
 - LLM execution chains
 - agent memory flows
 - workflow DAGs
@@ -90,7 +92,7 @@ Agents / Workflows
  ClickHouse + Postgres
         ↓
  Replay Engine + UI Console
-````
+```
 
 ---
 
@@ -124,12 +126,12 @@ Extend PulseStack with custom runtime plugins and integrations.
 
 Track:
 
-* latency
-* retries
-* token usage
-* workflow throughput
-* execution failures
-* runtime anomalies
+- latency
+- retries
+- token usage
+- workflow throughput
+- execution failures
+- runtime anomalies
 
 ## React Operations Console
 
@@ -194,9 +196,9 @@ For a deeper contributor-oriented view of the runtime internals, see
 
 ## Prerequisites
 
-* Node.js 20+
-* pnpm
-* Docker
+- Node.js 20+
+- pnpm
+- Docker
 
 ## Start Infrastructure
 
@@ -254,6 +256,12 @@ pnpm dev
         "name": "FetchLogs",
         "kind": "tool",
         "dependsOn": ["s1"],
+        "retry": {
+          "maxAttempts": 3,
+          "backoffMs": 250,
+          "maxBackoffMs": 2000,
+          "exponential": true
+        },
         "input": {
           "tool": "logs.query",
           "range": "15m"
@@ -278,20 +286,46 @@ pnpm dev
 }
 ```
 
+## Runtime Retry Policies
+
+Workflow steps can opt into bounded retry handling with a `retry` policy:
+
+```json
+{
+  "id": "fetch_logs",
+  "name": "Fetch logs",
+  "kind": "tool",
+  "retry": {
+    "maxAttempts": 3,
+    "backoffMs": 250,
+    "maxBackoffMs": 2000,
+    "exponential": true
+  },
+  "input": {
+    "tool": "logs.query"
+  }
+}
+```
+
+Retries are disabled by default (`maxAttempts: 1`). When enabled, PulseStack emits `step.retrying`
+events before another attempt, emits `step.failed` when attempts are exhausted, records retry metadata
+in execution output and snapshots under `__retry`, and marks the workflow as failed instead of leaving
+the execution in a running state.
+
 ---
 
 # Roadmap
 
-* Multi-tenant isolation
-* RBAC + auth providers
-* Workflow time-travel debugger
-* Token cost analytics
-* Agent memory visualization
-* Live workflow graph rendering
-* Distributed replay clustering
-* ML anomaly detection
-* AI safety event auditing
-* CNCF/OpenTelemetry integrations
+- Multi-tenant isolation
+- RBAC + auth providers
+- Workflow time-travel debugger
+- Token cost analytics
+- Agent memory visualization
+- Live workflow graph rendering
+- Distributed replay clustering
+- ML anomaly detection
+- AI safety event auditing
+- CNCF/OpenTelemetry integrations
 
 ---
 
@@ -299,18 +333,18 @@ pnpm dev
 
 PulseStack is designed as:
 
-* an open runtime observability standard for AI systems
-* a contributor-first infrastructure project
-* a foundation for AI-native debugging ecosystems
+- an open runtime observability standard for AI systems
+- a contributor-first infrastructure project
+- a foundation for AI-native debugging ecosystems
 
 We welcome:
 
-* OSS contributors
-* infrastructure engineers
-* AI runtime builders
-* observability engineers
-* GSoC/GSSoC contributors
-* distributed systems enthusiasts
+- OSS contributors
+- infrastructure engineers
+- AI runtime builders
+- observability engineers
+- GSoC/GSSoC contributors
+- distributed systems enthusiasts
 
 ---
 
@@ -344,4 +378,5 @@ Building observability infrastructure for the next generation of autonomous syst
              - founder of the idea 
 
 ```
+
 ```

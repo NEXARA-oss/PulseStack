@@ -1,6 +1,11 @@
-import { eventEnvelopeSchema, type EventEnvelope, type EventType } from '@pulsestack/contracts';
+import {
+  eventEnvelopeSchema,
+  type EventEnvelope,
+  type EventType,
+} from '@pulsestack/contracts';
 import { createId } from './ids.js';
 import type { PulseInfra } from './infra.js';
+import { injectTraceContext, withExtractedTraceContext } from './tracing.js';
 
 export function createEvent(input: {
   type: EventType;
@@ -27,10 +32,10 @@ export function createEvent(input: {
     parentSpanId: input.parentSpanId,
     timestamp: new Date().toISOString(),
     payload: input.payload ?? {},
-    tags: input.tags ?? {},
+    tags: injectTraceContext(input.tags),
   });
 }
 
 export async function publishEvent(infra: PulseInfra, event: EventEnvelope) {
-  await infra.writeEvent(event);
+  await withExtractedTraceContext(event.tags, () => infra.writeEvent(event));
 }
