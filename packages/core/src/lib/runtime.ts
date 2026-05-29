@@ -50,11 +50,12 @@ export class WorkflowRuntime {
         traceId,
         executionId,
         workflowId: request.workflow.id,
+        tenantId: request.workflow.tenantId,
         step,
         state,
       });
 
-      const result = await this.runStep(step, state, request.workflow.correlationId);
+      const result = await this.runStep(step, state, request.workflow.tenantId, request.workflow.correlationId);
       Object.assign(state, { [step.id]: result.output });
       results.push(result);
 
@@ -101,7 +102,12 @@ export class WorkflowRuntime {
     return { executionId, traceId, output };
   }
 
-  private async runStep(step: WorkflowStep, state: Record<string, unknown>, correlationId: string): Promise<StepResult> {
+  private async runStep(
+    step: WorkflowStep,
+    state: Record<string, unknown>,
+    tenantId: string,
+    correlationId: string,
+  ): Promise<StepResult> {
     const timestamp = new Date().toISOString();
     if (step.kind === 'tool') {
       await publishEvent(
@@ -109,7 +115,7 @@ export class WorkflowRuntime {
         createEvent({
           type: 'tool.called',
           source: this.source,
-          tenantId: 'local',
+          tenantId,
           correlationId,
           payload: { stepId: step.id, tool: step.name, input: step.input, state },
         }),
@@ -121,7 +127,7 @@ export class WorkflowRuntime {
         createEvent({
           type: 'llm.requested',
           source: this.source,
-          tenantId: 'local',
+          tenantId,
           correlationId,
           payload: { stepId: step.id, model: step.input.model ?? 'generic', prompt: step.input.prompt ?? '' },
         }),
@@ -164,6 +170,7 @@ export class WorkflowRuntime {
     traceId: string;
     executionId: string;
     workflowId: string;
+    tenantId: string;
     step: WorkflowStep;
     state: Record<string, unknown>;
   }) {
@@ -187,7 +194,7 @@ export class WorkflowRuntime {
       createEvent({
         type: 'span.recorded',
         source: this.source,
-        tenantId: 'local',
+        tenantId: args.tenantId,
         correlationId: args.traceId,
         workflowId: args.workflowId,
         executionId: args.executionId,
