@@ -47,11 +47,13 @@ async function proxyJson(url: string, init?: { method?: string; body?: unknown }
 }
 
 app.post('/auth/token', async (request) => {
-  const body = (request.body as { apiKey?: string; role?: string }) ?? {};
+  const body = (request.body as { apiKey?: string }) ?? {};
   if (body.apiKey !== env.API_KEY) {
     return app.jwt.sign({ sub: 'anonymous', tenantId: env.TENANT_ID, role: 'viewer', denied: true });
   }
-  return { token: app.jwt.sign({ sub: 'operator', tenantId: env.TENANT_ID, role: body.role ?? 'operator' }) };
+  // Role is always assigned server-side. Accepting a caller-supplied role field
+  // would allow any holder of a valid API key to self-escalate to admin.
+  return { token: app.jwt.sign({ sub: 'operator', tenantId: env.TENANT_ID, role: 'operator' }) };
 });
 
 function requiredPermission(method: string, url: string): Permission | null {
