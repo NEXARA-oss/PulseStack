@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
@@ -8,6 +9,18 @@ import { fetchJson } from './lib/api';
 import { useUiStore } from './store/ui';
 
 type Execution = { id: string; workflow_id: string; status: string; updated_at: string };
+type MetricsSummary = {
+  events: Array<{ type: string; total: number }>;
+  latency: Array<{ kind: string; avg_latency_ms: number }>;
+  executions: {
+    total: number;
+    succeeded: number;
+    failed: number;
+    successRate: number;
+    byStatus: Array<{ status: string; total: number }>;
+    recent: Execution[];
+  };
+};
 
 export default function App() {
   const selectedExecutionId = useUiStore((state) => state.selectedExecutionId);
@@ -26,7 +39,7 @@ export default function App() {
 
   const metrics = useQuery({
     queryKey: ['metrics'],
-    queryFn: () => fetchJson<{ events: Array<{ type: string; total: number }>; latency: Array<{ kind: string; avg_latency_ms: number }> }>('/api/metrics/summary'),
+    queryFn: () => fetchJson<MetricsSummary>('/api/metrics/summary'),
     refetchInterval: 5000,
   });
 
@@ -57,6 +70,14 @@ export default function App() {
       })),
     [dag.data],
   );
+  const successRate = Math.round((metrics.data?.executions.successRate ?? 0) * 100);
+  const averageLatency =
+    metrics.data?.latency.length && metrics.data.latency.length > 0
+      ? Math.round(
+          metrics.data.latency.reduce((sum, item) => sum + Number(item.avg_latency_ms ?? 0), 0) /
+            metrics.data.latency.length,
+        )
+      : 0;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(86,219,255,0.15),_transparent_40%),linear-gradient(180deg,#040814,#09111f_45%,#02050b)] px-4 py-6 text-white">
@@ -83,6 +104,25 @@ export default function App() {
         </Panel>
 
         <div className="grid gap-4">
+          <div className="grid gap-3 md:grid-cols-4">
+            <Panel title="Total Runs">
+              <div className="font-mono text-3xl font-semibold text-cyan">{metrics.data?.executions.total ?? 0}</div>
+              <div className="text-xs uppercase text-white/50">tracked executions</div>
+            </Panel>
+            <Panel title="Success Rate">
+              <div className="font-mono text-3xl font-semibold text-mint">{successRate}%</div>
+              <div className="text-xs uppercase text-white/50">{metrics.data?.executions.succeeded ?? 0} succeeded</div>
+            </Panel>
+            <Panel title="Failed Runs">
+              <div className="font-mono text-3xl font-semibold text-rose-300">{metrics.data?.executions.failed ?? 0}</div>
+              <div className="text-xs uppercase text-white/50">needs attention</div>
+            </Panel>
+            <Panel title="Avg Latency">
+              <div className="font-mono text-3xl font-semibold text-white">{averageLatency}ms</div>
+              <div className="text-xs uppercase text-white/50">trace spans</div>
+            </Panel>
+          </div>
+
           <Panel title="Execution DAG">
             <div className="h-[420px] overflow-hidden rounded-xl border border-white/10">
               <ReactFlow nodes={nodes} edges={dag.data?.edges ?? []} fitView>
@@ -105,7 +145,33 @@ export default function App() {
               ))}
             </div>
           </Panel>
+
+import { ReplayScrubber } from './components/ReplayScrubber';
+import { WorkflowGraph } from './components/WorkflowGraph';
+import { useWorkflowReplay, WorkflowEvent } from './hooks/useWorkflowReplay';
+
+// Humara mock execution data
+const MOCK_EVENTS: WorkflowEvent[] = [
+  { id: '1', nodeId: 'node-auth', status: 'success', timestamp: 1000 },
+  { id: '2', nodeId: 'node-fetch-data', status: 'success', timestamp: 2000 },
+  { id: '3', nodeId: 'node-process', status: 'running', timestamp: 3000 },
+  { id: '4', nodeId: 'node-save', status: 'failed', timestamp: 4000 },
+];
+
+function App() {
+  // Engine ab App level par chalega!
+  const replayState = useWorkflowReplay(MOCK_EVENTS);
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-8">
+      <div className="w-full max-w-5xl space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold text-gray-800">PulseStack Replay Viewer 🎬</h1>
+          <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-bold">Advanced Tier</span>
         </div>
+        
+        {/* Graph Component */}
+        <WorkflowGraph events={MOCK_EVENTS} currentIndex={replayState.currentStepIndex} />
 
         <div className="grid gap-4">
           <Panel title="Event Throughput">
@@ -130,6 +196,17 @@ export default function App() {
             </div>
           </Panel>
 
+          <Panel title="Execution Status">
+            <div className="space-y-2">
+              {metrics.data?.executions.byStatus.map((item) => (
+                <div key={item.status} className="flex justify-between rounded-lg bg-white/5 px-3 py-2">
+                  <span>{item.status}</span>
+                  <span className="font-mono">{item.total}</span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+
           <Panel title="Live Event Console">
             <div className="h-[360px] overflow-auto font-mono text-xs text-mint">
               {liveEvents.map((event, index) => (
@@ -140,7 +217,13 @@ export default function App() {
             </div>
           </Panel>
         </div>
+
+        {/* Timeline UI Component */}
+        <ReplayScrubber events={MOCK_EVENTS} replayState={replayState} />
+
       </div>
-    </main>
+    </div>
   );
 }
+
+export default App;

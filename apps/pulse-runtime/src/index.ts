@@ -1,4 +1,10 @@
-import { createBaseServer, loadEnv, PulseInfra, WorkflowRuntime } from '@pulsestack/core';
+import {
+  createBaseServer,
+  initializeTracing,
+  loadEnv,
+  PulseInfra,
+  WorkflowRuntime,
+} from '@pulsestack/core';
 import {
   loadPackageDefinition,
   Server,
@@ -13,6 +19,7 @@ import { loadSync } from '@grpc/proto-loader';
 import path from 'node:path';
 
 const env = loadEnv();
+initializeTracing(env);
 const infra = new PulseInfra();
 const runtime = new WorkflowRuntime(infra);
 const app = await createBaseServer('pulse-runtime');
@@ -45,8 +52,11 @@ app.post('/executions', async (request) => {
 });
 
 app.get('/executions/:executionId', async (request, reply) => {
-  const execution = await infra.getExecution((request.params as { executionId: string }).executionId);
-  if (!execution) return reply.code(404).send({ message: 'Execution not found' });
+  const execution = await infra.getExecution(
+    (request.params as { executionId: string }).executionId,
+  );
+  if (!execution)
+    return reply.code(404).send({ message: 'Execution not found' });
   return execution;
 });
 
@@ -55,8 +65,15 @@ app.get('/executions', async () => {
 });
 
 const protoPath = path.resolve(process.cwd(), 'proto/pulsestack.proto');
-const packageDefinition = loadSync(protoPath, { keepCase: true, longs: String, enums: String, defaults: true });
-const grpcDescriptor = loadPackageDefinition(packageDefinition) as RuntimeGrpcDescriptor;
+const packageDefinition = loadSync(protoPath, {
+  keepCase: true,
+  longs: String,
+  enums: String,
+  defaults: true,
+});
+const grpcDescriptor = loadPackageDefinition(
+  packageDefinition,
+) as RuntimeGrpcDescriptor;
 const grpcServer = new Server();
 
 grpcServer.addService(grpcDescriptor.pulsestack.runtime.Runtime.service, {
@@ -73,14 +90,20 @@ grpcServer.addService(grpcDescriptor.pulsestack.runtime.Runtime.service, {
         correlation_id: execution?.correlation_id ?? '',
       });
     } catch (error) {
-      callback(error instanceof Error ? error : new Error('Failed to fetch execution'));
+      callback(
+        error instanceof Error ? error : new Error('Failed to fetch execution'),
+      );
     }
   },
 });
 
-grpcServer.bindAsync(`0.0.0.0:${env.GRPC_PORT}`, ServerCredentials.createInsecure(), (error: Error | null) => {
-  if (error) throw error;
-  grpcServer.start();
-});
+grpcServer.bindAsync(
+  `0.0.0.0:${env.GRPC_PORT}`,
+  ServerCredentials.createInsecure(),
+  (error: Error | null) => {
+    if (error) throw error;
+    grpcServer.start();
+  },
+);
 
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });
