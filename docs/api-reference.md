@@ -149,13 +149,27 @@ curl -X POST http://localhost:4000/api/runtime/executions \
 
 ```json
 {
-  "id": "exec_abc123",
-  "workflow_id": "wf_agent_ops",
-  "status": "running",
-  "correlation_id": "corr_agent_ops",
-  "started_at": "2026-05-28T10:00:00.000Z"
+  "executionId": "exec_abc123",
+  "traceId": "trace_abc",
+  "output": {
+    "steps": [
+      {
+        "stepId": "s1",
+        "output": {},
+        "costUsd": 0.002,
+        "tokens": 0,
+        "attempts": 1,
+        "retry": { "maxAttempts": 1, "exhausted": false, "errors": [] }
+      }
+    ],
+    "totalCostUsd": 0.018,
+    "totalTokens": 350,
+    "finalState": {}
+  }
 }
 ```
+
+> **Note:** The execution runs synchronously and returns the full output on completion. For long-running workflows, monitor progress via the WebSocket event stream.
 
 **Error Responses**
 
@@ -205,10 +219,13 @@ curl http://localhost:4000/api/runtime/executions \
   {
     "id": "exec_abc123",
     "workflow_id": "wf_agent_ops",
-    "status": "completed",
+    "tenant_id": "local",
     "correlation_id": "corr_agent_ops",
-    "started_at": "2026-05-28T10:00:00.000Z",
-    "ended_at": "2026-05-28T10:00:05.000Z"
+    "status": "completed",
+    "input": {},
+    "output": {},
+    "created_at": "2026-05-28T10:00:00.000Z",
+    "updated_at": "2026-05-28T10:00:05.000Z"
   }
 ]
 ```
@@ -238,11 +255,13 @@ curl http://localhost:4000/api/runtime/executions/exec_abc123 \
 {
   "id": "exec_abc123",
   "workflow_id": "wf_agent_ops",
-  "status": "completed",
+  "tenant_id": "local",
   "correlation_id": "corr_agent_ops",
-  "started_at": "2026-05-28T10:00:00.000Z",
-  "ended_at": "2026-05-28T10:00:05.000Z",
-  "output": {}
+  "status": "completed",
+  "input": {},
+  "output": {},
+  "created_at": "2026-05-28T10:00:00.000Z",
+  "updated_at": "2026-05-28T10:00:05.000Z"
 }
 ```
 
@@ -273,16 +292,15 @@ curl http://localhost:4000/api/events/recent \
 [
   {
     "id": "evt_001",
-    "version": 1,
     "type": "workflow.started",
     "source": "pulse-runtime",
-    "tenantId": "local",
-    "correlationId": "corr_agent_ops",
-    "workflowId": "wf_agent_ops",
-    "executionId": "exec_abc123",
+    "tenant_id": "local",
+    "correlation_id": "corr_agent_ops",
+    "workflow_id": "wf_agent_ops",
+    "execution_id": "exec_abc123",
     "timestamp": "2026-05-28T10:00:00.000Z",
-    "payload": {},
-    "tags": {}
+    "payload": "{}",
+    "tags": "{}"
   }
 ]
 ```
@@ -301,7 +319,7 @@ ws://localhost:4000/ws/events
 
 **Message Format**
 
-Each message is a JSON-encoded `EventEnvelope`:
+Each message is a JSON-encoded `EventEnvelope` (published via NATS before storage):
 
 ```json
 {
@@ -345,40 +363,37 @@ curl http://localhost:4000/api/traces/exec_abc123 \
 ```json
 [
   {
-    "spanId": "span_001",
-    "parentSpanId": null,
-    "traceId": "trace_abc",
-    "executionId": "exec_abc123",
-    "workflowId": "wf_agent_ops",
+    "span_id": "span_001",
+    "parent_span_id": "",
+    "trace_id": "trace_abc",
+    "execution_id": "exec_abc123",
+    "workflow_id": "wf_agent_ops",
     "name": "workflow.execute",
     "kind": "workflow",
     "status": "ok",
-    "startedAt": "2026-05-28T10:00:00.000Z",
-    "endedAt": "2026-05-28T10:00:05.000Z",
-    "attributes": {},
-    "error": null
+    "started_at": "2026-05-28T10:00:00.000Z",
+    "ended_at": "2026-05-28T10:00:05.000Z",
+    "attributes": "{}",
+    "error": ""
   },
   {
-    "spanId": "span_002",
-    "parentSpanId": "span_001",
-    "traceId": "trace_abc",
-    "executionId": "exec_abc123",
-    "workflowId": "wf_agent_ops",
+    "span_id": "span_002",
+    "parent_span_id": "span_001",
+    "trace_id": "trace_abc",
+    "execution_id": "exec_abc123",
+    "workflow_id": "wf_agent_ops",
     "name": "workflow.step.tool",
     "kind": "tool",
     "status": "ok",
-    "startedAt": "2026-05-28T10:00:01.000Z",
-    "endedAt": "2026-05-28T10:00:02.000Z",
-    "attributes": {
-      "pulsestack.step.id": "s2",
-      "pulsestack.step.kind": "tool"
-    },
-    "error": null
+    "started_at": "2026-05-28T10:00:01.000Z",
+    "ended_at": "2026-05-28T10:00:02.000Z",
+    "attributes": "{\"pulsestack.step.id\":\"s2\",\"pulsestack.step.kind\":\"tool\"}",
+    "error": ""
   }
 ]
 ```
 
-**Error Response** `404 Not Found` (returns empty array)
+**Error Response** `200` (empty array when no traces found)
 
 ```json
 []
@@ -456,14 +471,42 @@ curl -X POST http://localhost:4000/api/replay/exec_abc123 \
 
 ```json
 {
-  "executionId": "exec_abc123",
-  "replayStatus": "completed",
-  "steps": [
-    { "id": "s1", "status": "ok", "output": {} },
-    { "id": "s2", "status": "ok", "output": {} },
-    { "id": "s3", "status": "ok", "output": {} }
+  "replayId": "replay_abc123",
+  "execution": {
+    "id": "exec_abc123",
+    "workflow_id": "wf_agent_ops",
+    "tenant_id": "local",
+    "correlation_id": "corr_agent_ops",
+    "status": "completed",
+    "input": {},
+    "output": {},
+    "created_at": "2026-05-28T10:00:00.000Z",
+    "updated_at": "2026-05-28T10:00:05.000Z"
+  },
+  "snapshots": [
+    {
+      "id": "snap_001",
+      "execution_id": "exec_abc123",
+      "workflow_id": "wf_agent_ops",
+      "sequence": 0,
+      "state": {},
+      "side_effects": [{ "type": "agent", "key": "s1", "response": {} }],
+      "created_at": "2026-05-28T10:00:01.000Z"
+    }
   ],
-  "diff": {}
+  "replayState": {},
+  "diff": {
+    "beforeKeys": ["steps", "totalCostUsd", "totalTokens", "finalState"],
+    "replayKeys": ["environment", "s1", "__retry"],
+    "identical": false
+  },
+  "timeline": [
+    {
+      "sequence": 0,
+      "timestamp": "2026-05-28T10:00:01.000Z",
+      "sideEffects": [{ "type": "agent", "key": "s1", "response": {} }]
+    }
+  ]
 }
 ```
 
@@ -486,17 +529,18 @@ curl http://localhost:4000/api/metrics/summary \
 
 ```json
 {
-  "totalEvents": 12450,
-  "totalExecutions": 87,
-  "avgLatencyMs": 320,
-  "failureRate": 0.02,
-  "eventsByType": {
-    "workflow.started": 87,
-    "workflow.completed": 85,
-    "workflow.failed": 2,
-    "tool.called": 210,
-    "llm.requested": 174
-  }
+  "events": [
+    { "type": "tool.called", "total": "210" },
+    { "type": "llm.requested", "total": "174" },
+    { "type": "workflow.started", "total": "87" },
+    { "type": "workflow.completed", "total": "85" },
+    { "type": "workflow.failed", "total": "2" }
+  ],
+  "latency": [
+    { "kind": "tool", "avg_latency_ms": 120.5 },
+    { "kind": "llm", "avg_latency_ms": 450.3 },
+    { "kind": "workflow", "avg_latency_ms": 5200.0 }
+  ]
 }
 ```
 
