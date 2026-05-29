@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+const booleanEnv = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  return value;
+}, z.boolean());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.string().default('info'),
@@ -18,7 +26,7 @@ const envSchema = z.object({
   API_KEY: z.string().default('pulsestack-local-api-key'),
   TENANT_ID: z.string().default('local'),
   PLUGIN_DIR: z.string().default('./plugins'),
-  AUTH_DISABLED: z.coerce.boolean().default(true),
+  AUTH_DISABLED: booleanEnv.default(true),
 });
 
 export type PulseEnv = z.infer<typeof envSchema>;
