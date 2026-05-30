@@ -218,7 +218,67 @@ pnpm install
 pnpm dev
 ```
 
----
+## Environment Setup
+
+Create a `.env` file from the example file:
+
+### Linux/macOS
+
+```bash
+cp .env.example .env
+```
+
+### Windows CMD
+
+```cmd
+copy .env.example .env
+```
+
+### Windows PowerShell
+
+```powershell
+Copy-Item .env.example .env
+```
+
+## Environment Variables
+
+| Variable | Purpose | Default Value |
+|----------|---------|---------------|
+| RUNTIME_URL | Runtime engine service | http://localhost:4101 |
+| EVENTS_URL | Event streaming service | http://localhost:4102 |
+| TRACE_URL | Tracing service | http://localhost:4103 |
+| REPLAY_URL | Replay engine | http://localhost:4104 |
+| METRICS_URL | Metrics service | http://localhost:4105 |
+| GRAPH_URL | Workflow graph service | http://localhost:4106 |
+| VITE_GATEWAY_URL | Frontend gateway URL | http://localhost:4000 |
+
+A sample `.env.example` file is included with default local development values.
+
+## Troubleshooting
+
+### Port already in use
+
+Stop conflicting local services or change ports.
+
+### Docker services not starting
+
+Ensure Docker Desktop is running before executing:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml up -d
+```
+
+### pnpm command not found
+
+Install pnpm globally:
+
+```bash
+npm install -g pnpm
+```
+
+### Docker command not found
+
+Ensure Docker Desktop is installed and running before starting infrastructure services.
 
 # Local Services
 
