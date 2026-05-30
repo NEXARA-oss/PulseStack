@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { eventEnvelopeSchema } from './index.js';
+import { eventEnvelopeSchema, workflowStepSchema } from './index.js';
 
 describe('contracts', () => {
   it('validates event envelopes', () => {
@@ -16,5 +16,33 @@ describe('contracts', () => {
         tags: {},
       }),
     ).not.toThrow();
+  });
+
+  it('validates bounded retry policies on workflow steps', () => {
+    const step = workflowStepSchema.parse({
+      id: 'fetch_logs',
+      name: 'Fetch logs',
+      kind: 'tool',
+      retry: {
+        maxAttempts: 3,
+        backoffMs: 25,
+        exponential: true,
+      },
+    });
+
+    expect(step.retry).toMatchObject({
+      maxAttempts: 3,
+      backoffMs: 25,
+      maxBackoffMs: 30_000,
+      exponential: true,
+    });
+    expect(() =>
+      workflowStepSchema.parse({
+        id: 'loop_forever',
+        name: 'Loop forever',
+        kind: 'tool',
+        retry: { maxAttempts: 0 },
+      }),
+    ).toThrow();
   });
 });

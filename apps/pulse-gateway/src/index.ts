@@ -1,4 +1,4 @@
-import { createBaseServer, loadEnv } from '@pulsestack/core';
+import { can, createBaseServer, loadEnv, type Permission, type Principal } from '@pulsestack/core';
 import { request } from 'undici';
 
 const env = loadEnv();
@@ -15,7 +15,8 @@ type JwtCapableRequest = {
     authorization?: string;
     'x-api-key'?: string | string[];
   };
-  jwtVerify(): Promise<unknown>;
+  jwtVerify(): Promise<Principal>;
+  user?: Principal;
 };
 
 type WebsocketLike = {
@@ -48,19 +49,43 @@ async function proxyJson(url: string, init?: { method?: string; body?: unknown }
 app.post('/auth/token', async (request) => {
   const body = (request.body as { apiKey?: string }) ?? {};
   if (body.apiKey !== env.API_KEY) {
-    return app.jwt.sign({ sub: 'anonymous', tenantId: env.TENANT_ID, denied: true });
+    return app.jwt.sign({ sub: 'anonymous', tenantId: env.TENANT_ID, role: 'viewer', denied: true });
   }
-  return { token: app.jwt.sign({ sub: 'operator', tenantId: env.TENANT_ID }) };
+  // Role is always assigned server-side. Accepting a caller-supplied role field
+  // would allow any holder of a valid API key to self-escalate to admin.
+  return { token: app.jwt.sign({ sub: 'operator', tenantId: env.TENANT_ID, role: 'operator' }) };
 });
+
+function requiredPermission(method: string, url: string): Permission | null {
+  if (!url.startsWith('/api')) return null;
+  if (url.startsWith('/api/runtime/executions') && method === 'POST') return 'execution:write';
+  if (url.startsWith('/api/runtime/executions')) return 'execution:read';
+  if (url.startsWith('/api/events')) return 'event:read';
+  if (url.startsWith('/api/traces')) return 'trace:read';
+  if (url.startsWith('/api/graph')) return 'graph:read';
+  if (url.startsWith('/api/metrics')) return 'metric:read';
+  if (url.startsWith('/api/replay')) return 'replay:write';
+  return null;
+}
 
 app.addHook('preHandler', async (request, reply) => {
   const jwtRequest = request as unknown as JwtCapableRequest;
-  if (!request.url.startsWith('/api') || env.AUTH_DISABLED) return;
+  const permission = requiredPermission(request.method, request.url);
+  if (!permission) return;
+  if (env.AUTH_DISABLED) {
+    jwtRequest.user = { sub: 'local', tenantId: env.TENANT_ID, role: 'admin' };
+    return;
+  }
   const bearer = jwtRequest.headers.authorization?.replace(/^Bearer\s+/i, '');
   const apiKey = jwtRequest.headers['x-api-key'];
-  if (apiKey === env.API_KEY) return;
+  if (apiKey === env.API_KEY) {
+    jwtRequest.user = { sub: 'api-key', tenantId: env.TENANT_ID, role: 'admin' };
+    return;
+  }
   if (!bearer) return reply.code(401).send({ message: 'Unauthorized' });
-  await jwtRequest.jwtVerify();
+  const principal = await jwtRequest.jwtVerify();
+  jwtRequest.user = principal;
+  if (!can(principal, permission)) return reply.code(403).send({ message: 'Forbidden', permission });
 });
 
 app.post('/api/runtime/executions', async (request) => proxyJson(`${services.runtime}/executions`, { method: 'POST', body: request.body }));
