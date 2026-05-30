@@ -70,6 +70,9 @@ export const traceSpanSchema = z.object({
   executionId: z.string(),
   workflowId: z.string(),
   name: z.string(),
+
+  kind: z.enum(['workflow', 'agent', 'tool', 'llm', 'queue', 'memory', 'trigger', 'retry', 'replay']),
+
   kind: z.enum([
     'workflow',
     'agent',
@@ -79,6 +82,7 @@ export const traceSpanSchema = z.object({
     'retry',
     'replay',
   ]),
+
   status: z.enum(['ok', 'error', 'running']),
   startedAt: z.string(),
   endedAt: z.string().nullable(),

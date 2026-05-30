@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+const booleanEnv = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  return value;
+}, z.boolean());
+
 const envSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
@@ -22,10 +30,13 @@ const envSchema = z.object({
   API_KEY: z.string().default('pulsestack-local-api-key'),
   TENANT_ID: z.string().default('local'),
   PLUGIN_DIR: z.string().default('./plugins'),
+issue-30-auth-disabled-false
+  AUTH_DISABLED: booleanEnv.default(true),
   AUTH_DISABLED: z.coerce.boolean().default(true),
   OTEL_TRACING_ENABLED: z.coerce.boolean().default(false),
   OTEL_SERVICE_NAME: z.string().default(''),
   OTEL_TRACES_EXPORTER: z.enum(['none', 'console']).default('none'),
+
 });
 
 export type PulseEnv = z.infer<typeof envSchema>;

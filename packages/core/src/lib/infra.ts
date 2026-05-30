@@ -170,7 +170,7 @@ export class PulseInfra {
   }
 
   async readMetrics() {
-    const [totals, latency] = await Promise.all([
+    const [totals, latency, executionTotals, recentExecutions] = await Promise.all([
       this.clickhouse.query({
         query:
           "select type, count() as total from events group by type order by total desc format JSONEachRow",
@@ -179,10 +179,42 @@ export class PulseInfra {
         query:
           "select kind, avg(dateDiff('millisecond', parseDateTime64BestEffort(started_at), parseDateTime64BestEffort(ended_at))) as avg_latency_ms from traces where ended_at != '' group by kind format JSONEachRow",
       }),
+      this.pg.query<{ status: string; total: string }>(
+        `select status, count(*)::text as total
+         from executions
+         group by status
+         order by total desc`,
+      ),
+      this.pg.query<{ id: string; workflow_id: string; status: string; updated_at: string }>(
+        `select id, workflow_id, status, updated_at
+         from executions
+         order by updated_at desc
+         limit 10`,
+      ),
     ]);
+    const executionsByStatus = executionTotals.rows.map((row) => ({
+      status: row.status,
+      total: Number(row.total),
+    }));
+    const executionCount = executionsByStatus.reduce((sum, row) => sum + row.total, 0);
+    const successfulExecutions = executionsByStatus
+      .filter((row) => ['completed', 'success', 'succeeded'].includes(row.status))
+      .reduce((sum, row) => sum + row.total, 0);
+    const failedExecutions = executionsByStatus
+      .filter((row) => ['failed', 'error'].includes(row.status))
+      .reduce((sum, row) => sum + row.total, 0);
+
     return {
       events: await totals.json(),
       latency: await latency.json(),
+      executions: {
+        total: executionCount,
+        succeeded: successfulExecutions,
+        failed: failedExecutions,
+        successRate: executionCount > 0 ? successfulExecutions / executionCount : 0,
+        byStatus: executionsByStatus,
+        recent: recentExecutions.rows,
+      },
     };
   }
 

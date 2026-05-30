@@ -78,6 +78,39 @@ export class WorkflowRuntime {
           input: request.input,
         });
 
+    const state: Record<string, unknown> = { ...request.input };
+    const results: StepResult[] = [];
+
+    for (const [index, step] of request.workflow.steps.entries()) {
+      const span = await this.startSpan({
+        traceId,
+        executionId,
+        workflowId: request.workflow.id,
+        tenantId: request.workflow.tenantId,
+        step,
+        state,
+      });
+
+      const result = await this.runStep(step, state, request.workflow.tenantId, request.workflow.correlationId);
+      Object.assign(state, { [step.id]: result.output });
+      results.push(result);
+
+      await this.snapshot({
+        id: createId('snap'),
+        executionId,
+        workflowId: request.workflow.id,
+        sequence: index,
+        state: structuredClone(state),
+        sideEffects: [
+          {
+            type: step.kind,
+            key: step.id,
+            response: result.output,
+          },
+        ],
+        createdAt: new Date().toISOString(),
+      });
+
         await publishEvent(
           this.infra,
           createEvent({
@@ -94,6 +127,7 @@ export class WorkflowRuntime {
             },
           }),
         );
+
 
         const state: Record<string, unknown> = { ...request.input };
         const retryState: Record<string, unknown> = {};
@@ -331,9 +365,15 @@ export class WorkflowRuntime {
   private async runStep(
     step: WorkflowStep,
     state: Record<string, unknown>,
+
+    tenantId: string,
+    correlationId: string,
+  ): Promise<StepResult> {
+
     correlationId: string,
     attempt: number,
   ): Promise<Omit<StepResult, 'attempts' | 'retry'>> {
+
     const timestamp = new Date().toISOString();
     const plannedFailures = Number(step.input.failAttempts ?? 0);
     if (Number.isFinite(plannedFailures) && attempt <= plannedFailures) {
@@ -345,7 +385,7 @@ export class WorkflowRuntime {
         createEvent({
           type: 'tool.called',
           source: this.source,
-          tenantId: 'local',
+          tenantId,
           correlationId,
           payload: {
             stepId: step.id,
@@ -362,7 +402,7 @@ export class WorkflowRuntime {
         createEvent({
           type: 'llm.requested',
           source: this.source,
-          tenantId: 'local',
+          tenantId,
           correlationId,
           payload: {
             stepId: step.id,
@@ -413,7 +453,11 @@ export class WorkflowRuntime {
     traceId: string;
     executionId: string;
     workflowId: string;
+
+    tenantId: string;
+
     parentSpanId?: string;
+
     step: WorkflowStep;
     state: Record<string, unknown>;
   }) {
@@ -441,7 +485,7 @@ export class WorkflowRuntime {
       createEvent({
         type: 'span.recorded',
         source: this.source,
-        tenantId: 'local',
+        tenantId: args.tenantId,
         correlationId: args.traceId,
         workflowId: args.workflowId,
         executionId: args.executionId,
