@@ -25,6 +25,7 @@ const envSchema = z.object({
   CLICKHOUSE_USER: z.string().default('default'),
   CLICKHOUSE_PASSWORD: z.string().default(''),
   NATS_URL: z.string().default('nats://localhost:4222'),
+  CORS_ORIGIN: z.string().default(''),
   JWT_SECRET: z.string().default('pulsestack-dev-secret'),
   API_KEY_SALT: z.string().default('pulsestack-api-salt'),
   API_KEY: z.string().default('pulsestack-local-api-key'),
