@@ -1,7 +1,8 @@
 
 import { describe, expect, it } from 'vitest';
-import type { EventEnvelope, WorkflowDefinition } from '@pulsestack/contracts';
+import type { EventEnvelope, WorkflowDefinition, ExecutionSnapshot, TraceSpan } from '@pulsestack/contracts';
 import { WorkflowRuntime } from './runtime.js';
+import type { PulseInfra } from './infra.js';
 
 class RuntimeInfraMock {
   events: EventEnvelope[] = [];
@@ -43,15 +44,8 @@ describe('WorkflowRuntime', () => {
     );
     expect(tenantEvents.length).toBeGreaterThan(0);
     expect(tenantEvents.every((event) => event.tenantId === workflow.tenantId)).toBe(true);
-
-import type {
-  EventEnvelope,
-  ExecutionSnapshot,
-  TraceSpan,
-} from '@pulsestack/contracts';
-import { describe, expect, it } from 'vitest';
-import type { PulseInfra } from './infra.js';
-import { WorkflowRuntime } from './runtime.js';
+  });
+});
 
 function createRuntimeHarness() {
   const events: EventEnvelope[] = [];
