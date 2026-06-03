@@ -78,38 +78,9 @@ export class WorkflowRuntime {
           input: request.input,
         });
 
-    const state: Record<string, unknown> = { ...request.input };
-    const results: StepResult[] = [];
-
-    for (const [index, step] of request.workflow.steps.entries()) {
-      const span = await this.startSpan({
-        traceId,
-        executionId,
-        workflowId: request.workflow.id,
-        tenantId: request.workflow.tenantId,
-        step,
-        state,
-      });
-
-      const result = await this.runStep(step, state, request.workflow.tenantId, request.workflow.correlationId);
-      Object.assign(state, { [step.id]: result.output });
-      results.push(result);
-
-      await this.snapshot({
-        id: createId('snap'),
-        executionId,
-        workflowId: request.workflow.id,
-        sequence: index,
-        state: structuredClone(state),
-        sideEffects: [
-          {
-            type: step.kind,
-            key: step.id,
-            response: result.output,
-          },
-        ],
-        createdAt: new Date().toISOString(),
-      });
+        const state: Record<string, unknown> = { ...request.input };
+        const retryState: Record<string, unknown> = {};
+        const results: StepResult[] = [];
 
         await publishEvent(
           this.infra,
@@ -127,11 +98,6 @@ export class WorkflowRuntime {
             },
           }),
         );
-
-
-        const state: Record<string, unknown> = { ...request.input };
-        const retryState: Record<string, unknown> = {};
-        const results: StepResult[] = [];
 
         try {
           for (const [index, step] of request.workflow.steps.entries()) {
@@ -157,6 +123,7 @@ export class WorkflowRuntime {
                   traceId,
                   executionId,
                   workflowId: request.workflow.id,
+                  tenantId: request.workflow.tenantId,
                   parentSpanId: workflowSpanId,
                   step,
                   state,
@@ -303,6 +270,7 @@ export class WorkflowRuntime {
         const result = await this.runStep(
           args.step,
           args.state,
+          args.tenantId,
           args.correlationId,
           attempt,
         );
@@ -365,11 +333,7 @@ export class WorkflowRuntime {
   private async runStep(
     step: WorkflowStep,
     state: Record<string, unknown>,
-
     tenantId: string,
-    correlationId: string,
-  ): Promise<StepResult> {
-
     correlationId: string,
     attempt: number,
   ): Promise<Omit<StepResult, 'attempts' | 'retry'>> {
