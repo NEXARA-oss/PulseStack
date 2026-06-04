@@ -8,7 +8,19 @@ interface ReplayScrubberProps {
 
 export function ReplayScrubber({ events, replayState }: ReplayScrubberProps) {
   const { currentStepIndex, isPlaying, play, pause, reset, stepForward, stepBackward } = replayState;
+
+  // Render an empty-state placeholder when there are no events so the component
+  // does not crash with TypeError accessing events[0].nodeId on an empty array.
+  if (events.length === 0) {
+    return (
+      <div className="flex items-center justify-center p-5 border border-gray-200 rounded-xl bg-white shadow-sm w-full mx-auto text-sm text-gray-400">
+        No execution events to display.
+      </div>
+    );
+  }
+
   const progress = events.length > 1 ? (currentStepIndex / (events.length - 1)) * 100 : 0;
+  const activeNodeId = events[currentStepIndex]?.nodeId ?? 'none';
 
   return (
     <div className="flex flex-col gap-4 p-5 border border-gray-200 rounded-xl bg-white shadow-sm w-full mx-auto">
@@ -40,7 +52,7 @@ export function ReplayScrubber({ events, replayState }: ReplayScrubberProps) {
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-500">Active Node:</span>
           <span className="font-mono text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-700">
-            {events[currentStepIndex].nodeId}
+            {activeNodeId}
           </span>
         </div>
       </div>

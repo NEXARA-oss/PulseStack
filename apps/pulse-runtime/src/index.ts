@@ -60,8 +60,11 @@ app.get('/executions/:executionId', async (request, reply) => {
   return execution;
 });
 
-app.get('/executions', async () => {
-  return infra.listExecutions();
+app.get('/executions', async (request) => {
+  const query = request.query as { limit?: string; offset?: string };
+  const limit = query.limit ? parseInt(query.limit, 10) : 25;
+  const offset = query.offset ? parseInt(query.offset, 10) : 0;
+  return infra.listExecutions(limit, offset);
 });
 
 const protoPath = path.resolve(process.cwd(), 'proto/pulsestack.proto');
