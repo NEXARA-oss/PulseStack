@@ -13,7 +13,18 @@ export async function createBaseServer(service: string) {
   const logger = createLogger(service);
   const app = Fastify({ logger });
 
-  await app.register(cors, { origin: true });
+  // Restrict CORS to the configured frontend origin instead of using
+  // origin: true, which reflects every incoming Origin header including
+  // the literal string "null". Browsers send Origin: null for requests
+  // from local file:// pages and sandboxed iframes, so origin: true
+  // effectively grants those contexts a permissive CORS response.
+  const allowedOrigins = env.CORS_ORIGIN
+    ? env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
+    : [];
+  await app.register(cors, {
+    origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+    credentials: true,
+  });
   await app.register(rateLimit, { max: 250, timeWindow: '1 minute' });
   await app.register(jwt, { secret: env.JWT_SECRET });
   await app.register(swagger, {

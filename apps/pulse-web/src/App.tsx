@@ -145,85 +145,8 @@ export default function App() {
               ))}
             </div>
           </Panel>
-
-import { ReplayScrubber } from './components/ReplayScrubber';
-import { WorkflowGraph } from './components/WorkflowGraph';
-import { useWorkflowReplay, WorkflowEvent } from './hooks/useWorkflowReplay';
-
-// Humara mock execution data
-const MOCK_EVENTS: WorkflowEvent[] = [
-  { id: '1', nodeId: 'node-auth', status: 'success', timestamp: 1000 },
-  { id: '2', nodeId: 'node-fetch-data', status: 'success', timestamp: 2000 },
-  { id: '3', nodeId: 'node-process', status: 'running', timestamp: 3000 },
-  { id: '4', nodeId: 'node-save', status: 'failed', timestamp: 4000 },
-];
-
-function App() {
-  // Engine ab App level par chalega!
-  const replayState = useWorkflowReplay(MOCK_EVENTS);
-
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-8">
-      <div className="w-full max-w-5xl space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-800">PulseStack Replay Viewer 🎬</h1>
-          <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-bold">Advanced Tier</span>
         </div>
-        
-        {/* Graph Component */}
-        <WorkflowGraph events={MOCK_EVENTS} currentIndex={replayState.currentStepIndex} />
-
-        <div className="grid gap-4">
-          <Panel title="Event Throughput">
-            <div className="space-y-2">
-              {metrics.data?.events.map((item) => (
-                <div key={item.type} className="flex justify-between rounded-lg bg-white/5 px-3 py-2">
-                  <span>{item.type}</span>
-                  <span className="font-mono">{item.total}</span>
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Latency">
-            <div className="space-y-2">
-              {metrics.data?.latency.map((item) => (
-                <div key={item.kind} className="flex justify-between rounded-lg bg-white/5 px-3 py-2">
-                  <span>{item.kind}</span>
-                  <span className="font-mono">{Math.round(item.avg_latency_ms ?? 0)}ms</span>
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Execution Status">
-            <div className="space-y-2">
-              {metrics.data?.executions.byStatus.map((item) => (
-                <div key={item.status} className="flex justify-between rounded-lg bg-white/5 px-3 py-2">
-                  <span>{item.status}</span>
-                  <span className="font-mono">{item.total}</span>
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Live Event Console">
-            <div className="h-[360px] overflow-auto font-mono text-xs text-mint">
-              {liveEvents.map((event, index) => (
-                <pre key={`${event}-${index}`} className="mb-2 whitespace-pre-wrap rounded-lg bg-black/30 p-2">
-                  {event}
-                </pre>
-              ))}
-            </div>
-          </Panel>
-        </div>
-
-        {/* Timeline UI Component */}
-        <ReplayScrubber events={MOCK_EVENTS} replayState={replayState} />
-
       </div>
-    </div>
+    </main>
   );
 }
-
-export default App;

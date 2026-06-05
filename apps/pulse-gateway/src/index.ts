@@ -89,7 +89,14 @@ app.addHook('preHandler', async (request, reply) => {
 });
 
 app.post('/api/runtime/executions', async (request) => proxyJson(`${services.runtime}/executions`, { method: 'POST', body: request.body }));
-app.get('/api/runtime/executions', async () => proxyJson(`${services.runtime}/executions`));
+app.get('/api/runtime/executions', async (request) => {
+  const { limit, offset } = request.query as { limit?: string; offset?: string };
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', limit);
+  if (offset) params.set('offset', offset);
+  const qs = params.toString();
+  return proxyJson(`${services.runtime}/executions${qs ? `?${qs}` : ''}`);
+});
 app.get('/api/runtime/executions/:executionId', async (request) =>
   proxyJson(`${services.runtime}/executions/${(request.params as { executionId: string }).executionId}`),
 );

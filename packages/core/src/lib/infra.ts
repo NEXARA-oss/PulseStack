@@ -73,12 +73,18 @@ export class PulseInfra {
     return result.rows[0] ?? null;
   }
 
-  async listExecutions(limit = 25) {
+  async listExecutions(limit = 25, offset = 0) {
+    const safeLimit = Math.min(Math.max(limit, 1), 200);
+    const safeOffset = Math.max(offset, 0);
     const result = await this.pg.query<ExecutionRecord>(
-      'select * from executions order by created_at desc limit $1',
-      [limit],
+      'select * from executions order by created_at desc limit $1 offset $2',
+      [safeLimit, safeOffset],
     );
-    return result.rows;
+    const countResult = await this.pg.query<{ total: string }>(
+      'select count(*) as total from executions',
+    );
+    const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
+    return { rows: result.rows, total, limit: safeLimit, offset: safeOffset };
   }
 
   async writeSnapshot(snapshot: ExecutionSnapshot) {
