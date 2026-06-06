@@ -8,7 +8,37 @@ import 'reactflow/dist/style.css';
 import { fetchJson } from './lib/api';
 import { useUiStore } from './store/ui';
 
-type Execution = { id: string; workflow_id: string; status: string; updated_at: string };
+type ExecutionContext = {
+  executionId: string;
+  workflowId: string;
+  tenantId: string;
+  correlationId: string;
+  traceId: string;
+  parentSpanId?: string;
+  retryAttempt?: number;
+  replaySessionId?: string;
+};
+type Execution = {
+  id: string;
+  workflow_id: string;
+  tenant_id?: string;
+  correlation_id?: string;
+  status: string;
+  output?: { executionContext?: ExecutionContext };
+  updated_at: string;
+};
+type ExecutionList = { rows: Execution[]; total: number; limit: number; offset: number };
+type TraceSpan = {
+  span_id: string;
+  trace_id?: string;
+  parent_span_id?: string;
+  started_at: string;
+  name: string;
+  kind: string;
+  status?: string;
+  attributes?: Record<string, unknown>;
+  executionContext?: ExecutionContext;
+};
 type MetricsSummary = {
   events: Array<{ type: string; total: number }>;
   latency: Array<{ kind: string; avg_latency_ms: number }>;
@@ -29,12 +59,12 @@ export default function App() {
 
   const executions = useQuery({
     queryKey: ['executions'],
-    queryFn: () => fetchJson<Execution[]>('/api/runtime/executions'),
+    queryFn: () => fetchJson<ExecutionList>('/api/runtime/executions'),
     refetchInterval: 4000,
   });
 
   useEffect(() => {
-    if (!selectedExecutionId && executions.data?.[0]) setSelectedExecutionId(executions.data[0].id);
+    if (!selectedExecutionId && executions.data?.rows[0]) setSelectedExecutionId(executions.data.rows[0].id);
   }, [executions.data, selectedExecutionId, setSelectedExecutionId]);
 
   const metrics = useQuery({
@@ -51,7 +81,7 @@ export default function App() {
 
   const trace = useQuery({
     queryKey: ['trace', selectedExecutionId],
-    queryFn: () => fetchJson<any[]>(`/api/traces/${selectedExecutionId}`),
+    queryFn: () => fetchJson<TraceSpan[]>(`/api/traces/${selectedExecutionId}`),
     enabled: Boolean(selectedExecutionId),
   });
 
@@ -71,6 +101,7 @@ export default function App() {
     [dag.data],
   );
   const successRate = Math.round((metrics.data?.executions.successRate ?? 0) * 100);
+  const executionRows = executions.data?.rows ?? [];
   const averageLatency =
     metrics.data?.latency.length && metrics.data.latency.length > 0
       ? Math.round(
@@ -89,7 +120,7 @@ export default function App() {
       <div className="grid gap-4 lg:grid-cols-[300px_1fr_360px]">
         <Panel title="Executions">
           <div className="space-y-2">
-            {executions.data?.map((execution) => (
+            {executionRows.map((execution) => (
               <button
                 key={execution.id}
                 onClick={() => setSelectedExecutionId(execution.id)}
@@ -98,6 +129,10 @@ export default function App() {
                 <div className="font-mono text-xs text-cyan">{execution.id}</div>
                 <div className="text-sm">{execution.workflow_id}</div>
                 <div className="text-xs text-white/60">{execution.status}</div>
+                <div className="mt-2 space-y-1 font-mono text-[10px] text-white/50">
+                  <div>corr {execution.correlation_id ?? execution.output?.executionContext?.correlationId ?? 'n/a'}</div>
+                  <div>trace {shortId(execution.output?.executionContext?.traceId)}</div>
+                </div>
               </button>
             ))}
           </div>
@@ -134,19 +169,33 @@ export default function App() {
 
           <Panel title="Trace Timeline">
             <div className="space-y-2">
-              {trace.data?.map((span) => (
+              {trace.data?.map((span) => {
+                const context = span.executionContext;
+                return (
                 <div key={`${span.span_id}-${span.started_at}`} className="rounded-xl border border-white/10 bg-black/20 p-3">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold">{span.name}</span>
                     <span className="text-xs uppercase text-mint">{span.kind}</span>
                   </div>
                   <div className="font-mono text-xs text-white/60">{span.started_at}</div>
+                  <div className="mt-2 grid gap-1 font-mono text-[10px] text-white/50 md:grid-cols-2">
+                    <span>trace {shortId(context?.traceId ?? span.trace_id)}</span>
+                    <span>parent {shortId(context?.parentSpanId ?? span.parent_span_id)}</span>
+                    {context?.retryAttempt ? <span>retry attempt {context.retryAttempt}</span> : null}
+                    {context?.replaySessionId ? <span>replay {context.replaySessionId}</span> : null}
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </Panel>
         </div>
       </div>
     </main>
   );
+}
+
+function shortId(value: string | undefined) {
+  if (!value) return 'n/a';
+  return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
 }

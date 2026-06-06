@@ -1,4 +1,5 @@
 import type {
+  ExecutionContext,
   ExecutionRequest,
   ExecutionSnapshot,
   RetryPolicy,
@@ -50,7 +51,7 @@ export class WorkflowRuntime {
   async execute(requestInput: ExecutionRequest) {
     const request = executionRequestSchema.parse(requestInput);
     validateWorkflowDag(request.workflow);
-    const executionId = createId('exec');
+    const executionId = request.context?.executionId ?? createId('exec');
 
     return withRuntimeSpan(
       'workflow.execute',
@@ -67,8 +68,25 @@ export class WorkflowRuntime {
         },
       },
       async (workflowSpan) => {
-        const traceId = activeTraceId(createId('trace'));
+        const traceId = request.context?.traceId ?? activeTraceId(createId('trace'));
         const workflowSpanId = spanId(workflowSpan);
+        const executionContext: ExecutionContext = {
+          executionId,
+          workflowId: request.workflow.id,
+          tenantId: request.workflow.tenantId,
+          correlationId: request.workflow.correlationId,
+          traceId,
+          ...(request.context?.parentSpanId
+            ? { parentSpanId: request.context.parentSpanId }
+            : {}),
+          ...(request.context?.retryAttempt
+            ? { retryAttempt: request.context.retryAttempt }
+            : {}),
+          ...(request.context?.replaySessionId
+            ? { replaySessionId: request.context.replaySessionId }
+            : {}),
+        };
+        workflowSpan.setAttributes(executionContextAttributes(executionContext));
         await this.infra.persistWorkflow(request.workflow);
         await this.infra.createExecution({
           executionId,
@@ -88,6 +106,7 @@ export class WorkflowRuntime {
             workflowId: request.workflow.id,
             executionId,
             spanId: workflowSpanId,
+            executionContext,
             payload: {
               workflow: request.workflow.name,
               initiatedBy: request.initiatedBy,
@@ -125,6 +144,8 @@ export class WorkflowRuntime {
                   executionId,
                   workflowId: request.workflow.id,
                   tenantId: request.workflow.tenantId,
+                  correlationId: request.workflow.correlationId,
+                  executionContext,
                   parentSpanId: workflowSpanId,
                   step,
                   state,
@@ -140,6 +161,7 @@ export class WorkflowRuntime {
                     workflowId: request.workflow.id,
                     tenantId: request.workflow.tenantId,
                     correlationId: request.workflow.correlationId,
+                    executionContext,
                     spanId: span.spanId,
                   });
                 } catch (error) {
@@ -175,6 +197,7 @@ export class WorkflowRuntime {
                   workflowId: request.workflow.id,
                   sequence: index,
                   state: structuredClone(state),
+                  executionContext,
                   sideEffects: [
                     {
                       type: step.kind,
@@ -196,6 +219,7 @@ export class WorkflowRuntime {
             steps: results,
             finalState: state,
             error: message,
+            executionContext,
           };
           workflowSpan.setAttributes({
             'pulsestack.workflow.failed': true,
@@ -216,6 +240,7 @@ export class WorkflowRuntime {
               workflowId: request.workflow.id,
               executionId,
               spanId: workflowSpanId,
+              executionContext,
               payload: failureOutput,
             }),
           );
@@ -227,6 +252,7 @@ export class WorkflowRuntime {
           totalCostUsd: results.reduce((sum, item) => sum + item.costUsd, 0),
           totalTokens: results.reduce((sum, item) => sum + item.tokens, 0),
           finalState: state,
+          executionContext,
         };
 
         workflowSpan.setAttributes({
@@ -244,6 +270,7 @@ export class WorkflowRuntime {
             workflowId: request.workflow.id,
             executionId,
             spanId: workflowSpanId,
+            executionContext,
             payload: output,
           }),
         );
@@ -261,6 +288,7 @@ export class WorkflowRuntime {
     workflowId: string;
     tenantId: string;
     correlationId: string;
+    executionContext: ExecutionContext;
     spanId: string;
   }): Promise<StepResult> {
     const policy = normalizeRetryPolicy(args.step.retry);
@@ -273,6 +301,7 @@ export class WorkflowRuntime {
           args.state,
           args.tenantId,
           args.correlationId,
+          args.executionContext,
           attempt,
         );
         return {
@@ -299,6 +328,11 @@ export class WorkflowRuntime {
             workflowId: args.workflowId,
             executionId: args.executionId,
             spanId: args.spanId,
+            executionContext: {
+              ...args.executionContext,
+              retryAttempt: attempt,
+              parentSpanId: args.spanId,
+            },
             payload: {
               stepId: args.step.id,
               stepName: args.step.name,
@@ -337,6 +371,7 @@ export class WorkflowRuntime {
 
     tenantId: string,
     correlationId: string,
+    executionContext: ExecutionContext,
     attempt: number,
   ): Promise<Omit<StepResult, 'attempts' | 'retry'>> {
 
@@ -353,6 +388,12 @@ export class WorkflowRuntime {
           source: this.source,
           tenantId,
           correlationId,
+          workflowId: executionContext.workflowId,
+          executionId: executionContext.executionId,
+          executionContext: {
+            ...executionContext,
+            retryAttempt: attempt,
+          },
           payload: {
             stepId: step.id,
             tool: step.name,
@@ -370,6 +411,12 @@ export class WorkflowRuntime {
           source: this.source,
           tenantId,
           correlationId,
+          workflowId: executionContext.workflowId,
+          executionId: executionContext.executionId,
+          executionContext: {
+            ...executionContext,
+            retryAttempt: attempt,
+          },
           payload: {
             stepId: step.id,
             model: step.input.model ?? 'generic',
@@ -421,6 +468,8 @@ export class WorkflowRuntime {
     workflowId: string;
 
     tenantId: string;
+    correlationId: string;
+    executionContext: ExecutionContext;
 
     parentSpanId?: string;
 
@@ -442,6 +491,12 @@ export class WorkflowRuntime {
         dependsOn: args.step.dependsOn,
         stateKeys: Object.keys(args.state),
         retryMaxAttempts: normalizeRetryPolicy(args.step.retry).maxAttempts,
+        executionContext: args.executionContext,
+        ...executionContextAttributes(args.executionContext),
+      },
+      executionContext: {
+        ...args.executionContext,
+        parentSpanId: args.parentSpanId,
       },
       error: null,
     });
@@ -452,11 +507,12 @@ export class WorkflowRuntime {
         type: 'span.recorded',
         source: this.source,
         tenantId: args.tenantId,
-        correlationId: args.traceId,
+        correlationId: args.correlationId,
         workflowId: args.workflowId,
         executionId: args.executionId,
         spanId: span.spanId,
         parentSpanId: span.parentSpanId ?? undefined,
+        executionContext: span.executionContext,
         payload: span.attributes,
       }),
     );
@@ -475,7 +531,14 @@ export class WorkflowRuntime {
         tokens: result.tokens,
         attempts: result.attempts,
         retryExhausted: result.retry.exhausted,
+        retryAttempt: result.attempts,
       },
+      executionContext: span.executionContext
+        ? {
+            ...span.executionContext,
+            retryAttempt: result.attempts,
+          }
+        : undefined,
     });
   }
 
@@ -514,6 +577,25 @@ function getRetryDelayMs(policy: RetryPolicy, failedAttempt: number) {
     ? 2 ** Math.max(0, failedAttempt - 1)
     : 1;
   return Math.min(policy.backoffMs * multiplier, policy.maxBackoffMs);
+}
+
+function executionContextAttributes(context: ExecutionContext) {
+  return {
+    'pulsestack.execution.id': context.executionId,
+    'pulsestack.workflow.id': context.workflowId,
+    'pulsestack.tenant.id': context.tenantId,
+    'pulsestack.correlation.id': context.correlationId,
+    'pulsestack.trace.id': context.traceId,
+    ...(context.parentSpanId
+      ? { 'pulsestack.parent_span.id': context.parentSpanId }
+      : {}),
+    ...(context.retryAttempt
+      ? { 'pulsestack.retry.attempt': context.retryAttempt }
+      : {}),
+    ...(context.replaySessionId
+      ? { 'pulsestack.replay.session_id': context.replaySessionId }
+      : {}),
+  };
 }
 
 async function defaultSleep(ms: number) {

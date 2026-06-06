@@ -21,6 +21,7 @@ export function ReplayScrubber({ events, replayState }: ReplayScrubberProps) {
 
   const progress = events.length > 1 ? (currentStepIndex / (events.length - 1)) * 100 : 0;
   const activeNodeId = events[currentStepIndex]?.nodeId ?? 'none';
+  const activeContext = events[currentStepIndex]?.executionContext;
 
   return (
     <div className="flex flex-col gap-4 p-5 border border-gray-200 rounded-xl bg-white shadow-sm w-full mx-auto">
@@ -54,6 +55,11 @@ export function ReplayScrubber({ events, replayState }: ReplayScrubberProps) {
           <span className="font-mono text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-700">
             {activeNodeId}
           </span>
+          {activeContext?.replaySessionId ? (
+            <span className="font-mono text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-700">
+              Replay {activeContext.replaySessionId}
+            </span>
+          ) : null}
         </div>
       </div>
     </div>
