@@ -33,6 +33,7 @@ const envSchema = z.object({
   PLUGIN_DIR: z.string().default('./plugins'),
   AUTH_DISABLED: booleanEnv.default(true),
   AUTH_DISABLED: z.coerce.boolean().default(false),
+  AUTH_DISABLED: booleanEnv.default(false),
   OTEL_TRACING_ENABLED: z.coerce.boolean().default(false),
   OTEL_SERVICE_NAME: z.string().default(''),
   OTEL_TRACES_EXPORTER: z.enum(['none', 'console']).default('none'),
