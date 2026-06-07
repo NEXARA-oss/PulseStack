@@ -56,10 +56,10 @@ async function proxyJson(
   return response.body.json();
 }
 
-app.post('/auth/token', async (request) => {
+app.post('/auth/token', async (request, reply) => {
   const body = (request.body as { apiKey?: string }) ?? {};
   if (body.apiKey !== env.API_KEY) {
-    return app.jwt.sign({ sub: 'anonymous', tenantId: env.TENANT_ID, role: 'viewer', denied: true });
+    return reply.code(401).send({ message: 'Unauthorized' });
   }
   // Role is always assigned server-side. Accepting a caller-supplied role field
   // would allow any holder of a valid API key to self-escalate to admin.
