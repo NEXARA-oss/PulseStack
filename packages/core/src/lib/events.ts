@@ -1,6 +1,12 @@
-import { eventEnvelopeSchema, type EventEnvelope, type EventType } from '@pulsestack/contracts';
+import {
+  eventEnvelopeSchema,
+  type EventEnvelope,
+  type ExecutionContext,
+  type EventType,
+} from '@pulsestack/contracts';
 import { createId } from './ids.js';
 import type { PulseInfra } from './infra.js';
+import { injectTraceContext, withExtractedTraceContext } from './tracing.js';
 
 export function createEvent(input: {
   type: EventType;
@@ -11,9 +17,11 @@ export function createEvent(input: {
   executionId?: string;
   spanId?: string;
   parentSpanId?: string;
+  executionContext?: ExecutionContext;
   payload?: Record<string, unknown>;
   tags?: Record<string, string>;
 }): EventEnvelope {
+  const executionContext = input.executionContext;
   return eventEnvelopeSchema.parse({
     id: createId('evt'),
     version: 1,
@@ -21,16 +29,38 @@ export function createEvent(input: {
     source: input.source,
     tenantId: input.tenantId,
     correlationId: input.correlationId,
-    workflowId: input.workflowId,
-    executionId: input.executionId,
+    workflowId: input.workflowId ?? executionContext?.workflowId,
+    executionId: input.executionId ?? executionContext?.executionId,
     spanId: input.spanId,
-    parentSpanId: input.parentSpanId,
+    parentSpanId: input.parentSpanId ?? executionContext?.parentSpanId,
+    executionContext,
     timestamp: new Date().toISOString(),
-    payload: input.payload ?? {},
-    tags: input.tags ?? {},
+    payload: {
+      ...(input.payload ?? {}),
+      ...(executionContext ? { executionContext } : {}),
+    },
+    tags: injectTraceContext({
+      ...input.tags,
+      ...(executionContext
+        ? {
+            executionId: executionContext.executionId,
+            workflowId: executionContext.workflowId,
+            traceId: executionContext.traceId,
+            ...(executionContext.parentSpanId
+              ? { parentSpanId: executionContext.parentSpanId }
+              : {}),
+            ...(executionContext.retryAttempt
+              ? { retryAttempt: String(executionContext.retryAttempt) }
+              : {}),
+            ...(executionContext.replaySessionId
+              ? { replaySessionId: executionContext.replaySessionId }
+              : {}),
+          }
+        : {}),
+    }),
   });
 }
 
 export async function publishEvent(infra: PulseInfra, event: EventEnvelope) {
-  await infra.writeEvent(event);
+  await withExtractedTraceContext(event.tags, () => infra.writeEvent(event));
 }

@@ -1,5 +1,6 @@
 import { access, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { pluginManifestSchema, type EventEnvelope } from '@pulsestack/contracts';
 import { loadEnv } from './config.js';
 
@@ -17,11 +18,25 @@ export async function loadPlugins() {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const manifestPath = path.join(pluginDir, entry.name, 'plugin.json');
-    const manifestJson = await import(manifestPath, { with: { type: 'json' } }).catch(() => null);
+    const manifestJson = await import(pathToFileURL(manifestPath).href, { with: { type: 'json' } }).catch(() => null);
     if (!manifestJson) continue;
-    const manifest = pluginManifestSchema.parse(manifestJson.default);
-    const modulePath = path.join(pluginDir, entry.name, manifest.entrypoint);
-    const mod = (await import(modulePath)) as PulsePluginModule;
+    let manifest;
+    try {
+      manifest = pluginManifestSchema.parse(manifestJson.default);
+    } catch (parseError) {
+      // Isolate schema validation failures so a single malformed plugin.json
+      // does not abort loading for all remaining plugins in the directory.
+      console.error(`[plugins] skipping "${entry.name}": manifest validation failed`, parseError);
+      continue;
+    }
+    let mod: PulsePluginModule;
+    try {
+      const modulePath = path.join(pluginDir, entry.name, manifest.entrypoint);
+      mod = (await import(pathToFileURL(modulePath).href)) as PulsePluginModule;
+    } catch (importError) {
+      console.error(`[plugins] skipping "${entry.name}": failed to import entrypoint`, importError);
+      continue;
+    }
     loaded.push(mod);
   }
 

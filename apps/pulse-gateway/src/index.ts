@@ -1,4 +1,4 @@
-import { createBaseServer, loadEnv } from '@pulsestack/core';
+import { can, createBaseServer, loadEnv, type Permission, type Principal } from '@pulsestack/core';
 import { request } from 'undici';
 
 const env = loadEnv();
@@ -15,7 +15,8 @@ type JwtCapableRequest = {
     authorization?: string;
     'x-api-key'?: string | string[];
   };
-  jwtVerify(): Promise<unknown>;
+  jwtVerify(): Promise<Principal>;
+  user?: Principal;
 };
 
 type WebsocketLike = {
@@ -36,10 +37,20 @@ const services = {
   graph: process.env.GRAPH_URL ?? 'http://localhost:4106',
 };
 
-async function proxyJson(url: string, init?: { method?: string; body?: unknown }) {
+async function proxyJson(
+  url: string,
+  init?: {
+    method?: string;
+    body?: unknown;
+    headers?: Record<string, string | string[] | undefined>;
+  },
+) {
   const response = await request(url, {
     method: init?.method ?? 'GET',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...forwardLineageHeaders(init?.headers),
+    },
     body: init?.body ? JSON.stringify(init.body) : undefined,
   });
   return response.body.json();
@@ -48,37 +59,87 @@ async function proxyJson(url: string, init?: { method?: string; body?: unknown }
 app.post('/auth/token', async (request) => {
   const body = (request.body as { apiKey?: string }) ?? {};
   if (body.apiKey !== env.API_KEY) {
-    return app.jwt.sign({ sub: 'anonymous', tenantId: env.TENANT_ID, denied: true });
+    return app.jwt.sign({ sub: 'anonymous', tenantId: env.TENANT_ID, role: 'viewer', denied: true });
   }
-  return { token: app.jwt.sign({ sub: 'operator', tenantId: env.TENANT_ID }) };
+  // Role is always assigned server-side. Accepting a caller-supplied role field
+  // would allow any holder of a valid API key to self-escalate to admin.
+  return { token: app.jwt.sign({ sub: 'operator', tenantId: env.TENANT_ID, role: 'operator' }) };
 });
+
+function requiredPermission(method: string, url: string): Permission | null {
+  if (!url.startsWith('/api')) return null;
+  if (url.startsWith('/api/runtime/executions') && method === 'POST') return 'execution:write';
+  if (url.startsWith('/api/runtime/executions')) return 'execution:read';
+  if (url.startsWith('/api/events')) return 'event:read';
+  if (url.startsWith('/api/traces')) return 'trace:read';
+  if (url.startsWith('/api/graph')) return 'graph:read';
+  if (url.startsWith('/api/metrics')) return 'metric:read';
+  if (url.startsWith('/api/replay')) return 'replay:write';
+  return null;
+}
 
 app.addHook('preHandler', async (request, reply) => {
   const jwtRequest = request as unknown as JwtCapableRequest;
-  if (!request.url.startsWith('/api') || env.AUTH_DISABLED) return;
+  const permission = requiredPermission(request.method, request.url);
+  if (!permission) return;
+  if (env.AUTH_DISABLED) {
+    jwtRequest.user = { sub: 'local', tenantId: env.TENANT_ID, role: 'admin' };
+    return;
+  }
   const bearer = jwtRequest.headers.authorization?.replace(/^Bearer\s+/i, '');
   const apiKey = jwtRequest.headers['x-api-key'];
-  if (apiKey === env.API_KEY) return;
+  if (apiKey === env.API_KEY) {
+    jwtRequest.user = { sub: 'api-key', tenantId: env.TENANT_ID, role: 'admin' };
+    return;
+  }
   if (!bearer) return reply.code(401).send({ message: 'Unauthorized' });
-  await jwtRequest.jwtVerify();
+  const principal = await jwtRequest.jwtVerify();
+  jwtRequest.user = principal;
+  if (!can(principal, permission)) return reply.code(403).send({ message: 'Forbidden', permission });
 });
 
-app.post('/api/runtime/executions', async (request) => proxyJson(`${services.runtime}/executions`, { method: 'POST', body: request.body }));
-app.get('/api/runtime/executions', async () => proxyJson(`${services.runtime}/executions`));
-app.get('/api/runtime/executions/:executionId', async (request) =>
-  proxyJson(`${services.runtime}/executions/${(request.params as { executionId: string }).executionId}`),
+app.post('/api/runtime/executions', async (request) =>
+  proxyJson(`${services.runtime}/executions`, {
+    method: 'POST',
+    body: request.body,
+    headers: request.headers,
+  }),
 );
-app.get('/api/events/recent', async () => proxyJson(`${services.events}/recent`));
+app.get('/api/runtime/executions', async (request) => {
+  const { limit, offset } = request.query as { limit?: string; offset?: string };
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', limit);
+  if (offset) params.set('offset', offset);
+  const qs = params.toString();
+  return proxyJson(`${services.runtime}/executions${qs ? `?${qs}` : ''}`, {
+    headers: request.headers,
+  });
+});
+app.get('/api/runtime/executions/:executionId', async (request) =>
+  proxyJson(`${services.runtime}/executions/${(request.params as { executionId: string }).executionId}`, {
+    headers: request.headers,
+  }),
+);
+app.get('/api/events/recent', async (request) =>
+  proxyJson(`${services.events}/recent`, { headers: request.headers }),
+);
 app.get('/api/traces/:executionId', async (request) =>
-  proxyJson(`${services.trace}/executions/${(request.params as { executionId: string }).executionId}`),
+  proxyJson(`${services.trace}/executions/${(request.params as { executionId: string }).executionId}`, {
+    headers: request.headers,
+  }),
 );
 app.get('/api/graph/:executionId', async (request) =>
-  proxyJson(`${services.graph}/executions/${(request.params as { executionId: string }).executionId}/dag`),
+  proxyJson(`${services.graph}/executions/${(request.params as { executionId: string }).executionId}/dag`, {
+    headers: request.headers,
+  }),
 );
-app.get('/api/metrics/summary', async () => proxyJson(`${services.metrics}/summary`));
+app.get('/api/metrics/summary', async (request) =>
+  proxyJson(`${services.metrics}/summary`, { headers: request.headers }),
+);
 app.post('/api/replay/:executionId', async (request) =>
   proxyJson(`${services.replay}/executions/${(request.params as { executionId: string }).executionId}/replay`, {
     method: 'POST',
+    headers: request.headers,
   }),
 );
 
@@ -91,3 +152,23 @@ const eventsStreamHandler: WebsocketHandlerLike = async (socket) => {
 app.get('/ws/events', { websocket: true }, eventsStreamHandler);
 
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });
+
+function forwardLineageHeaders(
+  headers: Record<string, string | string[] | undefined> | undefined,
+) {
+  if (!headers) return {};
+  return {
+    ...singleHeader(headers, 'traceparent'),
+    ...singleHeader(headers, 'tracestate'),
+    ...singleHeader(headers, 'x-correlation-id'),
+  };
+}
+
+function singleHeader(
+  headers: Record<string, string | string[] | undefined>,
+  name: string,
+) {
+  const value = headers[name];
+  const normalized = Array.isArray(value) ? value[0] : value;
+  return normalized ? { [name]: normalized } : {};
+}

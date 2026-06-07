@@ -73,12 +73,18 @@ export class PulseInfra {
     return result.rows[0] ?? null;
   }
 
-  async listExecutions(limit = 25) {
+  async listExecutions(limit = 25, offset = 0) {
+    const safeLimit = Math.min(Math.max(limit, 1), 200);
+    const safeOffset = Math.max(offset, 0);
     const result = await this.pg.query<ExecutionRecord>(
-      'select * from executions order by created_at desc limit $1',
-      [limit],
+      'select * from executions order by created_at desc limit $1 offset $2',
+      [safeLimit, safeOffset],
     );
-    return result.rows;
+    const countResult = await this.pg.query<{ total: string }>(
+      'select count(*) as total from executions',
+    );
+    const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
+    return { rows: result.rows, total, limit: safeLimit, offset: safeOffset };
   }
 
   async writeSnapshot(snapshot: ExecutionSnapshot) {
@@ -166,11 +172,34 @@ export class PulseInfra {
       query_params: { executionId },
       format: 'JSONEachRow',
     });
-    return result.json();
+    const rows = (await result.json()) as Array<Record<string, unknown>>;
+    return rows.map((row) => {
+      const attributes = parseJsonRecord(row.attributes);
+      return {
+        ...row,
+        attributes,
+        executionContext:
+          attributes.executionContext ??
+          (row.execution_id && row.workflow_id && row.trace_id
+            ? {
+                executionId: String(row.execution_id),
+                workflowId: String(row.workflow_id),
+                tenantId: String(attributes['pulsestack.tenant.id'] ?? ''),
+                correlationId: String(
+                  attributes['pulsestack.correlation.id'] ?? '',
+                ),
+                traceId: String(row.trace_id),
+                ...(row.parent_span_id
+                  ? { parentSpanId: String(row.parent_span_id) }
+                  : {}),
+              }
+            : undefined),
+      };
+    });
   }
 
   async readMetrics() {
-    const [totals, latency] = await Promise.all([
+    const [totals, latency, executionTotals, recentExecutions] = await Promise.all([
       this.clickhouse.query({
         query:
           "select type, count() as total from events group by type order by total desc format JSONEachRow",
@@ -179,10 +208,42 @@ export class PulseInfra {
         query:
           "select kind, avg(dateDiff('millisecond', parseDateTime64BestEffort(started_at), parseDateTime64BestEffort(ended_at))) as avg_latency_ms from traces where ended_at != '' group by kind format JSONEachRow",
       }),
+      this.pg.query<{ status: string; total: string }>(
+        `select status, count(*)::text as total
+         from executions
+         group by status
+         order by total desc`,
+      ),
+      this.pg.query<{ id: string; workflow_id: string; status: string; updated_at: string }>(
+        `select id, workflow_id, status, updated_at
+         from executions
+         order by updated_at desc
+         limit 10`,
+      ),
     ]);
+    const executionsByStatus = executionTotals.rows.map((row) => ({
+      status: row.status,
+      total: Number(row.total),
+    }));
+    const executionCount = executionsByStatus.reduce((sum, row) => sum + row.total, 0);
+    const successfulExecutions = executionsByStatus
+      .filter((row) => ['completed', 'success', 'succeeded'].includes(row.status))
+      .reduce((sum, row) => sum + row.total, 0);
+    const failedExecutions = executionsByStatus
+      .filter((row) => ['failed', 'error'].includes(row.status))
+      .reduce((sum, row) => sum + row.total, 0);
+
     return {
       events: await totals.json(),
       latency: await latency.json(),
+      executions: {
+        total: executionCount,
+        succeeded: successfulExecutions,
+        failed: failedExecutions,
+        successRate: executionCount > 0 ? successfulExecutions / executionCount : 0,
+        byStatus: executionsByStatus,
+        recent: recentExecutions.rows,
+      },
     };
   }
 
@@ -191,5 +252,17 @@ export class PulseInfra {
     this.redis.disconnect();
     const nc = await this.nats().catch(() => null);
     nc?.close();
+  }
+}
+
+function parseJsonRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
   }
 }
