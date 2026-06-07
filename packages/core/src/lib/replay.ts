@@ -32,8 +32,8 @@ export class ReplayEngine {
       createEvent({
         type: 'replay.started',
         source: this.source,
-        tenantId: execution.tenant_id,
-        correlationId: execution.correlation_id,
+tenantId,
+correlationId,
         workflowId: execution.workflow_id,
         executionId,
         executionContext: replayContext,
@@ -46,12 +46,12 @@ export class ReplayEngine {
       }),
     );
 
-    const finalSnapshot = snapshots[snapshots.length - 1];
-    const replayState = finalSnapshot?.state ?? execution.output;
+    const finalSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null;
+    const replayState = finalSnapshot?.state ?? execution.output ?? {};
     const diff = {
       beforeKeys: Object.keys(execution.output ?? {}),
       replayKeys: Object.keys(replayState ?? {}),
-      identical: JSON.stringify(execution.output) === JSON.stringify(replayState),
+      identical: JSON.stringify(execution.output ?? {}) === JSON.stringify(replayState),
     };
 
     await publishEvent(
@@ -59,8 +59,8 @@ export class ReplayEngine {
       createEvent({
         type: 'replay.completed',
         source: this.source,
-        tenantId: execution.tenant_id,
-        correlationId: execution.correlation_id,
+        tenantId,
+       correlationId,
         workflowId: execution.workflow_id,
         executionId,
         executionContext: replayContext,
