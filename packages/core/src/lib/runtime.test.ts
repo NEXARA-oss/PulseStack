@@ -6,7 +6,11 @@ import type {
   TraceSpan,
 } from '@pulsestack/contracts';
 import type { PulseInfra } from './infra.js';
+
+import type { EventEnvelope, WorkflowDefinition, ExecutionSnapshot, TraceSpan } from '@pulsestack/contracts';
+
 import { WorkflowRuntime } from './runtime.js';
+import type { PulseInfra } from './infra.js';
 
 class RuntimeInfraMock {
   events: EventEnvelope[] = [];

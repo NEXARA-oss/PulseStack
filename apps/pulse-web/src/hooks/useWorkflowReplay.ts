@@ -33,7 +33,7 @@ export function useWorkflowReplay(events: WorkflowEvent[]) {
 
   // The Playback Engine (Runs when isPlaying is true)
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
     
     if (isPlaying && currentStepIndex < events.length - 1) {
       timer = setInterval(() => {
