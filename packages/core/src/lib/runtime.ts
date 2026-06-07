@@ -1,4 +1,5 @@
 import type {
+  ExecutionContext,
   ExecutionRequest,
   ExecutionSnapshot,
   RetryPolicy,
@@ -45,12 +46,12 @@ export class WorkflowRuntime {
     private readonly infra: PulseInfra,
     private readonly source = 'pulse-runtime',
     private readonly options: RuntimeOptions = {},
-  ) {}
+  ) { }
 
   async execute(requestInput: ExecutionRequest) {
     const request = executionRequestSchema.parse(requestInput);
     validateWorkflowDag(request.workflow);
-    const executionId = createId('exec');
+    const executionId = request.context?.executionId ?? createId('exec');
 
     return withRuntimeSpan(
       'workflow.execute',
@@ -67,8 +68,25 @@ export class WorkflowRuntime {
         },
       },
       async (workflowSpan) => {
-        const traceId = activeTraceId(createId('trace'));
+        const traceId = request.context?.traceId ?? activeTraceId(createId('trace'));
         const workflowSpanId = spanId(workflowSpan);
+        const executionContext: ExecutionContext = {
+          executionId,
+          workflowId: request.workflow.id,
+          tenantId: request.workflow.tenantId,
+          correlationId: request.workflow.correlationId,
+          traceId,
+          ...(request.context?.parentSpanId
+            ? { parentSpanId: request.context.parentSpanId }
+            : {}),
+          ...(request.context?.retryAttempt
+            ? { retryAttempt: request.context.retryAttempt }
+            : {}),
+          ...(request.context?.replaySessionId
+            ? { replaySessionId: request.context.replaySessionId }
+            : {}),
+        };
+        workflowSpan.setAttributes(executionContextAttributes(executionContext));
         await this.infra.persistWorkflow(request.workflow);
         await this.infra.createExecution({
           executionId,
@@ -77,39 +95,6 @@ export class WorkflowRuntime {
           correlationId: request.workflow.correlationId,
           input: request.input,
         });
-
-    const state: Record<string, unknown> = { ...request.input };
-    const results: StepResult[] = [];
-
-    for (const [index, step] of request.workflow.steps.entries()) {
-      const span = await this.startSpan({
-        traceId,
-        executionId,
-        workflowId: request.workflow.id,
-        tenantId: request.workflow.tenantId,
-        step,
-        state,
-      });
-
-      const result = await this.runStep(step, state, request.workflow.tenantId, request.workflow.correlationId);
-      Object.assign(state, { [step.id]: result.output });
-      results.push(result);
-
-      await this.snapshot({
-        id: createId('snap'),
-        executionId,
-        workflowId: request.workflow.id,
-        sequence: index,
-        state: structuredClone(state),
-        sideEffects: [
-          {
-            type: step.kind,
-            key: step.id,
-            response: result.output,
-          },
-        ],
-        createdAt: new Date().toISOString(),
-      });
 
         await publishEvent(
           this.infra,
@@ -121,6 +106,7 @@ export class WorkflowRuntime {
             workflowId: request.workflow.id,
             executionId,
             spanId: workflowSpanId,
+            executionContext,
             payload: {
               workflow: request.workflow.name,
               initiatedBy: request.initiatedBy,
@@ -128,28 +114,28 @@ export class WorkflowRuntime {
           }),
         );
 
-
         const state: Record<string, unknown> = { ...request.input };
         const retryState: Record<string, unknown> = {};
         const results: StepResult[] = [];
 
-        try {
-          for (const [index, step] of request.workflow.steps.entries()) {
-            await withRuntimeSpan(
-              `workflow.step.${step.kind}`,
-              {
-                attributes: {
-                  'pulsestack.execution.id': executionId,
-                  'pulsestack.workflow.id': request.workflow.id,
-                  'pulsestack.step.id': step.id,
-                  'pulsestack.step.name': step.name,
-                  'pulsestack.step.kind': step.kind,
-                  'pulsestack.step.index': index,
-                  'pulsestack.step.depends_on': step.dependsOn.join(','),
-                  'pulsestack.state.keys': Object.keys(state).join(','),
-                  'pulsestack.step.retry.max_attempts': normalizeRetryPolicy(
-                    step.retry,
-                  ).maxAttempts,
+          try {
+            for (const [index, step] of request.workflow.steps.entries()) {
+              await withRuntimeSpan(
+                `workflow.step.${step.kind}`,
+                {
+                  attributes: {
+                    'pulsestack.execution.id': executionId,
+                    'pulsestack.workflow.id': request.workflow.id,
+                    'pulsestack.step.id': step.id,
+                    'pulsestack.step.name': step.name,
+                    'pulsestack.step.kind': step.kind,
+                    'pulsestack.step.index': index,
+                    'pulsestack.step.depends_on': step.dependsOn.join(','),
+                    'pulsestack.state.keys': Object.keys(state).join(','),
+                    'pulsestack.step.retry.max_attempts': normalizeRetryPolicy(
+                      step.retry,
+                    ).maxAttempts,
+                  },
                 },
               },
               async (otelStepSpan) => {
@@ -157,6 +143,9 @@ export class WorkflowRuntime {
                   traceId,
                   executionId,
                   workflowId: request.workflow.id,
+                  tenantId: request.workflow.tenantId,
+                  correlationId: request.workflow.correlationId,
+                  executionContext,
                   parentSpanId: workflowSpanId,
                   step,
                   state,
@@ -172,17 +161,34 @@ export class WorkflowRuntime {
                     workflowId: request.workflow.id,
                     tenantId: request.workflow.tenantId,
                     correlationId: request.workflow.correlationId,
+                    executionContext,
                     spanId: span.spanId,
                   });
-                } catch (error) {
-                  if (error instanceof StepRetryExhaustedError) {
-                    retryState[error.stepId] = error.retry;
-                    Object.assign(state, { __retry: retryState });
-                    otelStepSpan.setAttributes({
-                      'pulsestack.step.retry.exhausted': true,
-                      'pulsestack.step.retry.max_attempts':
-                        error.retry.maxAttempts,
+
+                  let result: StepResult;
+                  try {
+                    result = await this.runStepWithRetry({
+                      step,
+                      state,
+                      traceId,
+                      executionId,
+                      workflowId: request.workflow.id,
+                      tenantId: request.workflow.tenantId,
+                      correlationId: request.workflow.correlationId,
+                      spanId: span.spanId,
                     });
+                  } catch (error) {
+                    if (error instanceof StepRetryExhaustedError) {
+                      retryState[error.stepId] = error.retry;
+                      Object.assign(state, { __retry: retryState });
+                      otelStepSpan.setAttributes({
+                        'pulsestack.step.retry.exhausted': true,
+                        'pulsestack.step.retry.max_attempts':
+                          error.retry.maxAttempts,
+                      });
+                    }
+                    await this.failSpan(span, error);
+                    throw error;
                   }
                   await this.failSpan(span, error);
                   throw error;
@@ -207,6 +213,7 @@ export class WorkflowRuntime {
                   workflowId: request.workflow.id,
                   sequence: index,
                   state: structuredClone(state),
+                  executionContext,
                   sideEffects: [
                     {
                       type: step.kind,
@@ -220,34 +227,34 @@ export class WorkflowRuntime {
                 await this.finishSpan(span, result);
               },
             );
+            throw error;
           }
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : 'Workflow step failed';
-          const failureOutput = {
+
+          const output = {
             steps: results,
+            totalCostUsd: results.reduce((sum, item) => sum + item.costUsd, 0),
+            totalTokens: results.reduce((sum, item) => sum + item.tokens, 0),
             finalState: state,
             error: message,
+            executionContext,
           };
+
           workflowSpan.setAttributes({
-            'pulsestack.workflow.failed': true,
-            'pulsestack.workflow.error': message,
+            'pulsestack.workflow.total_cost_usd': output.totalCostUsd,
+            'pulsestack.workflow.total_tokens': output.totalTokens,
           });
-          await this.infra.completeExecution(
-            executionId,
-            'failed',
-            failureOutput,
-          );
+          await this.infra.completeExecution(executionId, 'completed', output);
           await publishEvent(
             this.infra,
             createEvent({
-              type: 'workflow.failed',
+              type: 'workflow.completed',
               source: this.source,
               tenantId: request.workflow.tenantId,
               correlationId: request.workflow.correlationId,
               workflowId: request.workflow.id,
               executionId,
               spanId: workflowSpanId,
+              executionContext,
               payload: failureOutput,
             }),
           );
@@ -259,6 +266,7 @@ export class WorkflowRuntime {
           totalCostUsd: results.reduce((sum, item) => sum + item.costUsd, 0),
           totalTokens: results.reduce((sum, item) => sum + item.tokens, 0),
           finalState: state,
+          executionContext,
         };
 
         workflowSpan.setAttributes({
@@ -276,6 +284,7 @@ export class WorkflowRuntime {
             workflowId: request.workflow.id,
             executionId,
             spanId: workflowSpanId,
+            executionContext,
             payload: output,
           }),
         );
@@ -293,6 +302,7 @@ export class WorkflowRuntime {
     workflowId: string;
     tenantId: string;
     correlationId: string;
+    executionContext: ExecutionContext;
     spanId: string;
   }): Promise<StepResult> {
     const policy = normalizeRetryPolicy(args.step.retry);
@@ -303,7 +313,9 @@ export class WorkflowRuntime {
         const result = await this.runStep(
           args.step,
           args.state,
+          args.tenantId,
           args.correlationId,
+          args.executionContext,
           attempt,
         );
         return {
@@ -330,6 +342,11 @@ export class WorkflowRuntime {
             workflowId: args.workflowId,
             executionId: args.executionId,
             spanId: args.spanId,
+            executionContext: {
+              ...args.executionContext,
+              retryAttempt: attempt,
+              parentSpanId: args.spanId,
+            },
             payload: {
               stepId: args.step.id,
               stepName: args.step.name,
@@ -365,18 +382,15 @@ export class WorkflowRuntime {
   private async runStep(
     step: WorkflowStep,
     state: Record<string, unknown>,
-
     tenantId: string,
     correlationId: string,
-  ): Promise<StepResult> {
-
-    correlationId: string,
+    executionContext: ExecutionContext,
     attempt: number,
   ): Promise<Omit<StepResult, 'attempts' | 'retry'>> {
 
-    const timestamp = new Date().toISOString();
-    const plannedFailures = Number(step.input.failAttempts ?? 0);
-    if (Number.isFinite(plannedFailures) && attempt <= plannedFailures) {
+      const timestamp = new Date().toISOString();
+      const plannedFailures = Number(step.input.failAttempts ?? 0);
+      if(Number.isFinite(plannedFailures) && attempt <= plannedFailures) {
       throw new Error(`Simulated failure for ${step.id} on attempt ${attempt}`);
     }
     if (step.kind === 'tool') {
@@ -387,6 +401,12 @@ export class WorkflowRuntime {
           source: this.source,
           tenantId,
           correlationId,
+          workflowId: executionContext.workflowId,
+          executionId: executionContext.executionId,
+          executionContext: {
+            ...executionContext,
+            retryAttempt: attempt,
+          },
           payload: {
             stepId: step.id,
             tool: step.name,
@@ -404,6 +424,12 @@ export class WorkflowRuntime {
           source: this.source,
           tenantId,
           correlationId,
+          workflowId: executionContext.workflowId,
+          executionId: executionContext.executionId,
+          executionContext: {
+            ...executionContext,
+            retryAttempt: attempt,
+          },
           payload: {
             stepId: step.id,
             model: step.input.model ?? 'generic',
@@ -421,23 +447,23 @@ export class WorkflowRuntime {
     const output =
       step.kind === 'llm'
         ? {
-            ...base,
-            text: `synthetic completion for ${step.name}`,
-            tokens: 350 + step.name.length,
-          }
+          ...base,
+          text: `synthetic completion for ${step.name}`,
+          tokens: 350 + step.name.length,
+        }
         : step.kind === 'tool'
           ? {
-              ...base,
-              status: 'ok',
-              result: {
-                echoed: step.input,
-                checksum: `${step.id}:${Object.keys(state).length}`,
-              },
-            }
+            ...base,
+            status: 'ok',
+            result: {
+              echoed: step.input,
+              checksum: `${step.id}:${Object.keys(state).length}`,
+            },
+          }
           : {
-              ...base,
-              status: 'processed',
-            };
+            ...base,
+            status: 'processed',
+          };
     const tokens =
       step.kind === 'llm' && 'tokens' in output ? Number(output.tokens) : 0;
 
@@ -455,6 +481,8 @@ export class WorkflowRuntime {
     workflowId: string;
 
     tenantId: string;
+    correlationId: string;
+    executionContext: ExecutionContext;
 
     parentSpanId?: string;
 
@@ -476,6 +504,12 @@ export class WorkflowRuntime {
         dependsOn: args.step.dependsOn,
         stateKeys: Object.keys(args.state),
         retryMaxAttempts: normalizeRetryPolicy(args.step.retry).maxAttempts,
+        executionContext: args.executionContext,
+        ...executionContextAttributes(args.executionContext),
+      },
+      executionContext: {
+        ...args.executionContext,
+        parentSpanId: args.parentSpanId,
       },
       error: null,
     });
@@ -486,11 +520,12 @@ export class WorkflowRuntime {
         type: 'span.recorded',
         source: this.source,
         tenantId: args.tenantId,
-        correlationId: args.traceId,
+        correlationId: args.correlationId,
         workflowId: args.workflowId,
         executionId: args.executionId,
         spanId: span.spanId,
         parentSpanId: span.parentSpanId ?? undefined,
+        executionContext: span.executionContext,
         payload: span.attributes,
       }),
     );
@@ -509,7 +544,14 @@ export class WorkflowRuntime {
         tokens: result.tokens,
         attempts: result.attempts,
         retryExhausted: result.retry.exhausted,
+        retryAttempt: result.attempts,
       },
+      executionContext: span.executionContext
+        ? {
+            ...span.executionContext,
+            retryAttempt: result.attempts,
+          }
+        : undefined,
     });
   }
 
@@ -548,6 +590,25 @@ function getRetryDelayMs(policy: RetryPolicy, failedAttempt: number) {
     ? 2 ** Math.max(0, failedAttempt - 1)
     : 1;
   return Math.min(policy.backoffMs * multiplier, policy.maxBackoffMs);
+}
+
+function executionContextAttributes(context: ExecutionContext) {
+  return {
+    'pulsestack.execution.id': context.executionId,
+    'pulsestack.workflow.id': context.workflowId,
+    'pulsestack.tenant.id': context.tenantId,
+    'pulsestack.correlation.id': context.correlationId,
+    'pulsestack.trace.id': context.traceId,
+    ...(context.parentSpanId
+      ? { 'pulsestack.parent_span.id': context.parentSpanId }
+      : {}),
+    ...(context.retryAttempt
+      ? { 'pulsestack.retry.attempt': context.retryAttempt }
+      : {}),
+    ...(context.replaySessionId
+      ? { 'pulsestack.replay.session_id': context.replaySessionId }
+      : {}),
+  };
 }
 
 async function defaultSleep(ms: number) {

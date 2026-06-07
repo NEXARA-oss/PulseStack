@@ -11,6 +11,7 @@ import {
 } from '@pulsestack/core';
 import {
   eventEnvelopeSchema,
+  executionContextSchema,
   eventTypeSchema,
   type EventType,
 } from '@pulsestack/contracts';
@@ -30,6 +31,9 @@ app.post<{ Params: { type: string }; Body: Record<string, unknown> }>(
   '/emit/:type',
   async (request) => {
     const eventType: EventType = eventTypeSchema.parse(request.params.type);
+    const executionContext = request.body.executionContext
+      ? executionContextSchema.parse(request.body.executionContext)
+      : undefined;
     const event = withExtractedTraceContext(
       traceCarrierFromHeaders(request.headers),
       () =>
@@ -39,6 +43,9 @@ app.post<{ Params: { type: string }; Body: Record<string, unknown> }>(
           tenantId: env.TENANT_ID,
           correlationId:
             request.headers['x-correlation-id']?.toString() ?? 'manual',
+          workflowId: executionContext?.workflowId,
+          executionId: executionContext?.executionId,
+          executionContext,
           payload: request.body ?? {},
         }),
     );
