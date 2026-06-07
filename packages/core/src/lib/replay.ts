@@ -1,6 +1,7 @@
 import { createEvent, publishEvent } from './events.js';
 import { createId } from './ids.js';
 import type { PulseInfra } from './infra.js';
+import type { ExecutionContext } from '@pulsestack/contracts';
 
 export class ReplayEngine {
   constructor(private readonly infra: PulseInfra, private readonly source = 'pulse-replay') {}
@@ -12,9 +13,20 @@ export class ReplayEngine {
     }
     const snapshots = await this.infra.getSnapshots(executionId);
     const replayId = createId('replay');
-   
-const tenantId = execution.tenant_id ?? 'unknown';
-const correlationId = execution.correlation_id ?? executionId;
+    const originalContext = execution.output?.executionContext as
+      | ExecutionContext
+      | undefined;
+    const replayContext: ExecutionContext = {
+      executionId,
+      workflowId: execution.workflow_id,
+      tenantId: execution.tenant_id,
+      correlationId: execution.correlation_id,
+      traceId: originalContext?.traceId ?? execution.correlation_id,
+      ...(originalContext?.parentSpanId
+        ? { parentSpanId: originalContext.parentSpanId }
+        : {}),
+      replaySessionId: replayId,
+    };
     await publishEvent(
       this.infra,
       createEvent({
@@ -24,7 +36,13 @@ tenantId,
 correlationId,
         workflowId: execution.workflow_id,
         executionId,
-        payload: { replayId, snapshotCount: snapshots.length },
+        executionContext: replayContext,
+        payload: {
+          replayId,
+          replaySessionId: replayId,
+          originalExecutionId: executionId,
+          snapshotCount: snapshots.length,
+        },
       }),
     );
 
@@ -45,12 +63,21 @@ correlationId,
        correlationId,
         workflowId: execution.workflow_id,
         executionId,
-        payload: { replayId, diff, replayState },
+        executionContext: replayContext,
+        payload: {
+          replayId,
+          replaySessionId: replayId,
+          originalExecutionId: executionId,
+          diff,
+          replayState,
+        },
       }),
     );
 
     return {
       replayId,
+      replaySessionId: replayId,
+      executionContext: replayContext,
       execution,
       snapshots,
       replayState,

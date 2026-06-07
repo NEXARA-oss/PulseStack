@@ -7,6 +7,16 @@ export type WorkflowEvent = {
   status: 'pending' | 'running' | 'success' | 'failed';
   timestamp: number;
   logs?: string;
+  executionContext?: {
+    executionId: string;
+    workflowId: string;
+    tenantId: string;
+    correlationId: string;
+    traceId: string;
+    parentSpanId?: string;
+    retryAttempt?: number;
+    replaySessionId?: string;
+  };
 };
 
 export function useWorkflowReplay(events: WorkflowEvent[]) {
