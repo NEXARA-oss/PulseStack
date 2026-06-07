@@ -1,3 +1,4 @@
+import { json } from 'stream/consumers';
 import { can, createBaseServer, loadEnv, type Permission, type Principal } from '@pulsestack/core';
 import { request } from 'undici';
 
@@ -53,7 +54,7 @@ async function proxyJson(
     },
     body: init?.body ? JSON.stringify(init.body) : undefined,
   });
-  return response.body.json();
+  return await json(response.body);
 }
 
 app.post('/auth/token', async (request) => {
