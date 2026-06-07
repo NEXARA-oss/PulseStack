@@ -1,6 +1,7 @@
 import { createEvent, publishEvent } from './events.js';
 import { createId } from './ids.js';
 import type { PulseInfra } from './infra.js';
+import type { ExecutionContext } from '@pulsestack/contracts';
 
 export class ReplayEngine {
   constructor(private readonly infra: PulseInfra, private readonly source = 'pulse-replay') {}
@@ -24,7 +25,13 @@ tenantId,
 correlationId,
         workflowId: execution.workflow_id,
         executionId,
-        payload: { replayId, snapshotCount: snapshots.length },
+        executionContext: replayContext,
+        payload: {
+          replayId,
+          replaySessionId: replayId,
+          originalExecutionId: executionId,
+          snapshotCount: snapshots.length,
+        },
       }),
     );
 
@@ -45,12 +52,21 @@ correlationId,
        correlationId,
         workflowId: execution.workflow_id,
         executionId,
-        payload: { replayId, diff, replayState },
+        executionContext: replayContext,
+        payload: {
+          replayId,
+          replaySessionId: replayId,
+          originalExecutionId: executionId,
+          diff,
+          replayState,
+        },
       }),
     );
 
     return {
       replayId,
+      replaySessionId: replayId,
+      executionContext: replayContext,
       execution,
       snapshots,
       replayState,

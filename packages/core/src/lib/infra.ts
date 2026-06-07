@@ -172,7 +172,30 @@ export class PulseInfra {
       query_params: { executionId },
       format: 'JSONEachRow',
     });
-    return result.json();
+    const rows = (await result.json()) as Array<Record<string, unknown>>;
+    return rows.map((row) => {
+      const attributes = parseJsonRecord(row.attributes);
+      return {
+        ...row,
+        attributes,
+        executionContext:
+          attributes.executionContext ??
+          (row.execution_id && row.workflow_id && row.trace_id
+            ? {
+                executionId: String(row.execution_id),
+                workflowId: String(row.workflow_id),
+                tenantId: String(attributes['pulsestack.tenant.id'] ?? ''),
+                correlationId: String(
+                  attributes['pulsestack.correlation.id'] ?? '',
+                ),
+                traceId: String(row.trace_id),
+                ...(row.parent_span_id
+                  ? { parentSpanId: String(row.parent_span_id) }
+                  : {}),
+              }
+            : undefined),
+      };
+    });
   }
 
   async readMetrics() {
@@ -229,5 +252,17 @@ export class PulseInfra {
     this.redis.disconnect();
     const nc = await this.nats().catch(() => null);
     nc?.close();
+  }
+}
+
+function parseJsonRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
   }
 }

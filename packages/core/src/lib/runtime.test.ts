@@ -1,13 +1,16 @@
-
 import { describe, expect, it } from 'vitest';
 import type {
   EventEnvelope,
+  WorkflowDefinition,
   ExecutionSnapshot,
   TraceSpan,
-  WorkflowDefinition,
 } from '@pulsestack/contracts';
 import type { PulseInfra } from './infra.js';
+
+import type { EventEnvelope, WorkflowDefinition, ExecutionSnapshot, TraceSpan } from '@pulsestack/contracts';
+
 import { WorkflowRuntime } from './runtime.js';
+import type { PulseInfra } from './infra.js';
 
 class RuntimeInfraMock {
   events: EventEnvelope[] = [];
@@ -142,6 +145,15 @@ describe('WorkflowRuntime retry handling', () => {
     expect(harness.events.some((event) => event.type === 'step.retrying')).toBe(
       true,
     );
+    expect(
+      harness.events.find((event) => event.type === 'step.retrying')
+        ?.executionContext,
+    ).toMatchObject({
+      executionId: result.executionId,
+      workflowId: baseRequest.workflow.id,
+      correlationId: baseRequest.workflow.correlationId,
+      retryAttempt: 1,
+    });
     expect(harness.snapshots[0].state).toMatchObject({
       __retry: {
         fetch_logs: {
@@ -154,6 +166,11 @@ describe('WorkflowRuntime retry handling', () => {
     expect(harness.spans.at(-1)?.attributes).toMatchObject({
       attempts: 2,
       retryExhausted: false,
+      retryAttempt: 2,
+    });
+    expect(harness.completions.at(-1)?.output.executionContext).toMatchObject({
+      executionId: result.executionId,
+      traceId: result.traceId,
     });
   });
 
@@ -197,6 +214,5 @@ describe('WorkflowRuntime retry handling', () => {
           'Step fetch_logs failed after 2 attempts: Simulated failure for fetch_logs on attempt 2',
       },
     });
-
   });
 });
