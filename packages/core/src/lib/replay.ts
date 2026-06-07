@@ -13,20 +13,9 @@ export class ReplayEngine {
     }
     const snapshots = await this.infra.getSnapshots(executionId);
     const replayId = createId('replay');
-    const originalContext = execution.output?.executionContext as
-      | ExecutionContext
-      | undefined;
-    const replayContext: ExecutionContext = {
-      executionId,
-      workflowId: execution.workflow_id,
-      tenantId: execution.tenant_id,
-      correlationId: execution.correlation_id,
-      traceId: originalContext?.traceId ?? execution.correlation_id,
-      ...(originalContext?.parentSpanId
-        ? { parentSpanId: originalContext.parentSpanId }
-        : {}),
-      replaySessionId: replayId,
-    };
+   
+const tenantId = execution.tenant_id ?? 'unknown';
+const correlationId = execution.correlation_id ?? executionId;
     await publishEvent(
       this.infra,
       createEvent({
