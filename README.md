@@ -579,20 +579,7 @@ Distributed under the **MIT License**.
 
 ---
 
-# ❤️ Credits
 
-### Core Contributors
-
-| Contributor      | Role                                                   |
-| ---------------- | ------------------------------------------------------ |
-| **@sreerevanth** | Founder, Initial Design, System Architecture           |
-| **Contributors** | Development, Documentation, Testing, Community Support |
-
-### Special Recognition
-
-* 💡 Idea & Vision — **@sreerevanth**
-* 🏗️ Initial System Design — **@sreerevanth**
-* 🚀 Project Founder — **@sreerevanth**
 
 ---
 
