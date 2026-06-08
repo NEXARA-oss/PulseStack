@@ -4,6 +4,9 @@ import { motion } from 'framer-motion';
 import { Panel } from '@pulsestack/ui';
 import ReactFlow, { Background, Controls } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { WorkflowGraph } from './components/WorkflowGraph';
+import { ReplayScrubber } from './components/ReplayScrubber';
+import { useWorkflowReplay, type WorkflowEvent } from './hooks/useWorkflowReplay';
 import { fetchJson } from './lib/api';
 import { useUiStore } from './store/ui';
 
@@ -51,6 +54,15 @@ type MetricsSummary = {
   };
 };
 
+type DashboardStateProps = {
+  title: string;
+  message?: string;
+  minHeight?: string;
+  retryLabel?: string;
+  isRetrying?: boolean;
+  onRetry?: () => void;
+};
+
 const MOCK_EVENTS: WorkflowEvent[] = [
   { id: '1', nodeId: 'node-auth', status: 'success', timestamp: 1000 },
   { id: '2', nodeId: 'node-fetch-data', status: 'success', timestamp: 2000 },
@@ -71,6 +83,8 @@ export default function App() {
     queryKey: ['executions'],
     queryFn: () => fetchJson<ExecutionList>('/api/runtime/executions'),
     refetchInterval: 4000,
+    retry: 1,
+    retryDelay: 1000,
   });
 
   useEffect(() => {
@@ -81,18 +95,24 @@ export default function App() {
     queryKey: ['metrics'],
     queryFn: () => fetchJson<MetricsSummary>('/api/metrics/summary'),
     refetchInterval: 5000,
+    retry: 1,
+    retryDelay: 1000,
   });
 
   const dag = useQuery({
     queryKey: ['graph', selectedExecutionId],
     queryFn: () => fetchJson<{ nodes: any[]; edges: any[] }>(`/api/graph/${selectedExecutionId}`),
     enabled: Boolean(selectedExecutionId),
+    retry: 1,
+    retryDelay: 1000,
   });
 
   const trace = useQuery({
     queryKey: ['trace', selectedExecutionId],
     queryFn: () => fetchJson<TraceSpan[]>(`/api/traces/${selectedExecutionId}`),
     enabled: Boolean(selectedExecutionId),
+    retry: 1,
+    retryDelay: 1000,
   });
 
   useEffect(() => {
@@ -105,7 +125,7 @@ export default function App() {
       setWsStatus('connecting');
       const gatewayUrl = import.meta.env.VITE_GATEWAY_URL ?? 'http://localhost:4000';
       const wsUrl = `${gatewayUrl.replace('http', 'ws')}/ws/events`;
-      
+
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
@@ -171,60 +191,70 @@ export default function App() {
       </motion.header>
 
       <div className="grid gap-4 lg:grid-cols-[300px_1fr_360px]">
-        {/* Left Column: Executions */}
         <Panel title="Executions">
-          <div className="space-y-2">
-            {executionRows.map((execution) => (
-              <button
-                key={execution.id}
-                onClick={() => setSelectedExecutionId(execution.id)}
-                className={`w-full rounded-xl border px-3 py-2 text-left ${selectedExecutionId === execution.id ? 'border-cyan bg-cyan/10' : 'border-white/10 bg-white/5'}`}
-              >
-                <div className="font-mono text-xs text-cyan">{execution.id}</div>
-                <div className="text-sm">{execution.workflow_id}</div>
-                <div className="text-xs text-white/60">{execution.status}</div>
-                <div className="mt-2 space-y-1 font-mono text-[10px] text-white/50">
-                  <div>corr {execution.correlation_id ?? execution.output?.executionContext?.correlationId ?? 'n/a'}</div>
-                  <div>trace {shortId(execution.output?.executionContext?.traceId)}</div>
-                </div>
-              </button>
-            ))}
-          </div>
+          {executions.isLoading ? (
+            <LoadingStack rows={5} minHeight="min-h-[442px]" />
+          ) : executions.isError ? (
+            <DashboardError
+              title="Executions unavailable"
+              message={getErrorMessage(executions.error)}
+              minHeight="min-h-[442px]"
+              isRetrying={executions.isFetching}
+              onRetry={() => void executions.refetch()}
+            />
+          ) : executionRows.length === 0 ? (
+            <DashboardEmpty title="No executions yet" message="Runs will appear here after workflows start." minHeight="min-h-[442px]" />
+          ) : (
+            <div className="space-y-2 min-h-[442px]">
+              {executionRows.map((execution) => (
+                <button
+                  key={execution.id}
+                  onClick={() => setSelectedExecutionId(execution.id)}
+                  className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${selectedExecutionId === execution.id ? 'border-cyan bg-cyan/10' : 'border-white/10 bg-white/5 hover:border-white/20'}`}
+                >
+                  <div className="font-mono text-xs text-cyan">{execution.id}</div>
+                  <div className="text-sm">{execution.workflow_id}</div>
+                  <div className="text-xs text-white/60">{execution.status}</div>
+                  <div className="mt-2 space-y-1 font-mono text-[10px] text-white/50">
+                    <div>corr {execution.correlation_id ?? execution.output?.executionContext?.correlationId ?? 'n/a'}</div>
+                    <div>trace {shortId(execution.output?.executionContext?.traceId)}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </Panel>
 
-        {/* Center Column: Graphs and Timelines */}
         <div className="flex flex-col gap-4">
-          {/* Top Panel stats */}
           <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
             <Panel title="Total Runs">
-              <div className="font-mono text-3xl font-semibold text-cyan">
-                {metrics.isLoading ? '...' : (metrics.data?.executions.total ?? 0)}
-              </div>
+              <StatValue isLoading={metrics.isLoading} isError={metrics.isError} className="text-cyan">
+                {metrics.data?.executions.total ?? 0}
+              </StatValue>
               <div className="text-xs uppercase text-white/50">tracked executions</div>
             </Panel>
             <Panel title="Success Rate">
-              <div className="font-mono text-3xl font-semibold text-mint">
-                {metrics.isLoading ? '...' : `${successRate}%`}
-              </div>
+              <StatValue isLoading={metrics.isLoading} isError={metrics.isError} className="text-mint">
+                {`${successRate}%`}
+              </StatValue>
               <div className="text-xs uppercase text-white/50">
-                {metrics.isLoading ? '...' : `${metrics.data?.executions.succeeded ?? 0} succeeded`}
+                {metrics.isLoading ? <InlineSkeleton width="w-24" /> : metrics.isError ? 'metrics unavailable' : `${metrics.data?.executions.succeeded ?? 0} succeeded`}
               </div>
             </Panel>
             <Panel title="Failed Runs">
-              <div className="font-mono text-3xl font-semibold text-rose-300">
-                {metrics.isLoading ? '...' : (metrics.data?.executions.failed ?? 0)}
-              </div>
+              <StatValue isLoading={metrics.isLoading} isError={metrics.isError} className="text-rose-300">
+                {metrics.data?.executions.failed ?? 0}
+              </StatValue>
               <div className="text-xs uppercase text-white/50">needs attention</div>
             </Panel>
             <Panel title="Avg Latency">
-              <div className="font-mono text-3xl font-semibold text-white">
-                {metrics.isLoading ? '...' : `${averageLatency}ms`}
-              </div>
+              <StatValue isLoading={metrics.isLoading} isError={metrics.isError} className="text-white">
+                {`${averageLatency}ms`}
+              </StatValue>
               <div className="text-xs uppercase text-white/50">trace spans</div>
             </Panel>
           </div>
 
-          {/* Tab Selection */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
             <div className="mb-4 flex items-center justify-between border-b border-white/10 pb-4">
               <div className="flex bg-black/40 p-1 rounded-xl border border-white/10">
@@ -236,7 +266,7 @@ export default function App() {
                       : 'text-white/60 hover:text-white border border-transparent'
                   }`}
                 >
-                  🖥️ Realtime Monitor
+                  Realtime Monitor
                 </button>
                 <button
                   onClick={() => setActiveTab('replay')}
@@ -246,11 +276,10 @@ export default function App() {
                       : 'text-white/60 hover:text-white border border-transparent'
                   }`}
                 >
-                  🎬 Replay Simulator
+                  Replay Simulator
                 </button>
               </div>
 
-              {/* WebSocket Status Indicator */}
               <div className="flex items-center gap-2 text-xs font-mono bg-black/25 px-3 py-1.5 rounded-lg border border-white/5">
                 <span className={`h-2 w-2 rounded-full ${
                   wsStatus === 'connected'
@@ -267,21 +296,22 @@ export default function App() {
 
             {activeTab === 'monitor' ? (
               <div className="space-y-4">
-                {/* Execution DAG Panel */}
                 <Panel title="Execution DAG">
                   <div className="h-[420px] overflow-hidden rounded-xl border border-white/10 relative">
-                    {dag.isLoading ? (
-                      <div className="flex items-center justify-center h-full text-cyan animate-pulse">
-                        Loading execution graph...
-                      </div>
+                    {!selectedExecutionId ? (
+                      <DashboardEmpty title="Select an execution" message="Graph details will appear here." minHeight="h-full" />
+                    ) : dag.isLoading ? (
+                      <GraphSkeleton />
                     ) : dag.isError ? (
-                      <div className="flex items-center justify-center h-full text-rose-400 text-sm">
-                        Failed to load execution graph
-                      </div>
+                      <DashboardError
+                        title="Execution graph unavailable"
+                        message={getErrorMessage(dag.error)}
+                        minHeight="h-full"
+                        isRetrying={dag.isFetching}
+                        onRetry={() => void dag.refetch()}
+                      />
                     ) : !dag.data || !dag.data.nodes || dag.data.nodes.length === 0 ? (
-                      <div className="flex items-center justify-center h-full text-white/40 text-sm">
-                        No graph data available. Select an execution.
-                      </div>
+                      <DashboardEmpty title="No graph data" message="This execution has no DAG nodes yet." minHeight="h-full" />
                     ) : (
                       <ReactFlow nodes={nodes} edges={dag.data?.edges ?? []} fitView>
                         <Background color="#16314d" />
@@ -291,25 +321,24 @@ export default function App() {
                   </div>
                 </Panel>
 
-                {/* Trace Timeline Panel */}
                 <Panel title="Trace Timeline">
                   {trace.isLoading ? (
-                    <div className="flex items-center justify-center py-8 text-cyan animate-pulse">
-                      Loading trace spans...
-                    </div>
+                    <LoadingStack rows={4} minHeight="min-h-[300px]" />
                   ) : trace.isError ? (
-                    <div className="text-rose-400 py-4 text-center text-sm">
-                      Failed to load trace spans
-                    </div>
+                    <DashboardError
+                      title="Trace spans unavailable"
+                      message={getErrorMessage(trace.error)}
+                      minHeight="min-h-[300px]"
+                      isRetrying={trace.isFetching}
+                      onRetry={() => void trace.refetch()}
+                    />
                   ) : !trace.data || trace.data.length === 0 ? (
-                    <div className="text-center py-8 text-sm text-white/40">
-                      No traces recorded. Select an execution.
-                    </div>
+                    <DashboardEmpty title="No traces recorded" message="Trace spans will appear after instrumentation emits them." minHeight="min-h-[300px]" />
                   ) : (
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-[300px] min-h-[300px] overflow-y-auto pr-1">
                       {trace.data.map((span) => (
                         <div key={`${span.span_id}-${span.started_at}`} className="rounded-xl border border-white/10 bg-black/20 p-3 hover:bg-black/30 transition-colors">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-3">
                             <span className="font-semibold text-sm">{span.name}</span>
                             <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-white/5 text-mint border border-white/5">{span.kind}</span>
                           </div>
@@ -324,65 +353,83 @@ export default function App() {
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    PulseStack Replay Viewer 🎬
+                    PulseStack Replay Viewer
                   </h3>
                   <span className="bg-cyan/15 text-cyan border border-cyan/30 px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">
                     Advanced Tier
                   </span>
                 </div>
-                
-                {/* Graph Component */}
-                <WorkflowGraph events={MOCK_EVENTS} currentIndex={replayState.currentStepIndex} />
 
-                {/* Timeline UI Component */}
+                <WorkflowGraph events={MOCK_EVENTS} currentIndex={replayState.currentStepIndex} />
                 <ReplayScrubber events={MOCK_EVENTS} replayState={replayState} />
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Column: Statistics & Live Events */}
         <div className="flex flex-col gap-4">
           <Panel title="Event Throughput">
             <div className="space-y-2">
               {metrics.isLoading ? (
-                <div className="text-cyan animate-pulse py-4 text-center text-xs">Loading metrics...</div>
+                <LoadingStack rows={4} minHeight="min-h-[188px]" compact />
               ) : metrics.isError ? (
-                <div className="text-rose-400 py-4 text-center text-xs">Failed to load metrics</div>
+                <DashboardError
+                  title="Metrics unavailable"
+                  message={getErrorMessage(metrics.error)}
+                  minHeight="min-h-[188px]"
+                  isRetrying={metrics.isFetching}
+                  onRetry={() => void metrics.refetch()}
+                />
               ) : metrics.data?.events && metrics.data.events.length > 0 ? (
-                metrics.data.events.map((item) => (
-                  <div key={item.type} className="flex justify-between rounded-lg bg-white/5 px-3 py-2 border border-white/5 text-sm hover:border-white/10 transition-colors">
-                    <span className="text-white/70">{item.type}</span>
-                    <span className="font-mono text-cyan font-bold">{item.total}</span>
-                  </div>
-                ))
+                <div className="space-y-2 min-h-[188px]">
+                  {metrics.data.events.map((item) => (
+                    <div key={item.type} className="flex justify-between rounded-lg bg-white/5 px-3 py-2 border border-white/5 text-sm hover:border-white/10 transition-colors">
+                      <span className="text-white/70">{item.type}</span>
+                      <span className="font-mono text-cyan font-bold">{item.total}</span>
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <div className="text-center py-4 text-sm text-white/40">No events recorded</div>
+                <DashboardEmpty title="No events recorded" message="Throughput updates will appear when events arrive." minHeight="min-h-[188px]" />
               )}
             </div>
           </Panel>
 
           <Panel title="Latency">
-            <div className="space-y-2">
-              {trace.data?.map((span) => {
-                const context = span.executionContext;
-                return (
-                <div key={`${span.span_id}-${span.started_at}`} className="rounded-xl border border-white/10 bg-black/20 p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">{span.name}</span>
-                    <span className="text-xs uppercase text-mint">{span.kind}</span>
-                  </div>
-                  <div className="font-mono text-xs text-white/60">{span.started_at}</div>
-                  <div className="mt-2 grid gap-1 font-mono text-[10px] text-white/50 md:grid-cols-2">
-                    <span>trace {shortId(context?.traceId ?? span.trace_id)}</span>
-                    <span>parent {shortId(context?.parentSpanId ?? span.parent_span_id)}</span>
-                    {context?.retryAttempt ? <span>retry attempt {context.retryAttempt}</span> : null}
-                    {context?.replaySessionId ? <span>replay {context.replaySessionId}</span> : null}
-                  </div>
-                </div>
-                );
-              })}
-            </div>
+            {trace.isLoading ? (
+              <LoadingStack rows={4} minHeight="min-h-[300px]" />
+            ) : trace.isError ? (
+              <DashboardError
+                title="Latency spans unavailable"
+                message={getErrorMessage(trace.error)}
+                minHeight="min-h-[300px]"
+                isRetrying={trace.isFetching}
+                onRetry={() => void trace.refetch()}
+              />
+            ) : !trace.data || trace.data.length === 0 ? (
+              <DashboardEmpty title="No latency spans" message="Latency details will appear when traces are recorded." minHeight="min-h-[300px]" />
+            ) : (
+              <div className="space-y-2 min-h-[300px]">
+                {trace.data.map((span) => {
+                  const context = span.executionContext;
+                  return (
+                    <div key={`${span.span_id}-${span.started_at}`} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold">{span.name}</span>
+                        <span className="text-xs uppercase text-mint">{span.kind}</span>
+                      </div>
+                      <div className="font-mono text-xs text-white/60">{span.started_at}</div>
+                      <div className="mt-2 grid gap-1 font-mono text-[10px] text-white/50 md:grid-cols-2">
+                        <span>trace {shortId(context?.traceId ?? span.trace_id)}</span>
+                        <span>parent {shortId(context?.parentSpanId ?? span.parent_span_id)}</span>
+                        {context?.retryAttempt ? <span>retry attempt {context.retryAttempt}</span> : null}
+                        {context?.replaySessionId ? <span>replay {context.replaySessionId}</span> : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Panel>
         </div>
       </div>
@@ -393,4 +440,74 @@ export default function App() {
 function shortId(value: string | undefined) {
   if (!value) return 'n/a';
   return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'The request failed. Please try again.';
+}
+
+function DashboardError({ title, message, minHeight = 'min-h-[160px]', retryLabel = 'Retry', isRetrying, onRetry }: DashboardStateProps) {
+  return (
+    <div className={`flex ${minHeight} flex-col items-center justify-center rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-6 text-center`}>
+      <div className="text-sm font-semibold text-rose-200">{title}</div>
+      {message ? <div className="mt-1 max-w-[26rem] text-xs text-rose-100/70">{message}</div> : null}
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={isRetrying}
+          className="mt-4 rounded-lg border border-rose-200/30 bg-rose-200/10 px-3 py-1.5 text-xs font-semibold text-rose-50 transition hover:bg-rose-200/20 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isRetrying ? 'Retrying...' : retryLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function DashboardEmpty({ title, message, minHeight = 'min-h-[160px]' }: DashboardStateProps) {
+  return (
+    <div className={`flex ${minHeight} flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] px-4 py-6 text-center`}>
+      <div className="text-sm font-semibold text-white/70">{title}</div>
+      {message ? <div className="mt-1 max-w-[24rem] text-xs text-white/40">{message}</div> : null}
+    </div>
+  );
+}
+
+function LoadingStack({ rows, minHeight = 'min-h-[160px]', compact = false }: { rows: number; minHeight?: string; compact?: boolean }) {
+  return (
+    <div className={`space-y-2 ${minHeight}`} aria-busy="true" aria-label="Loading">
+      {Array.from({ length: rows }).map((_, index) => (
+        <div key={index} className={`animate-pulse rounded-xl border border-white/10 bg-white/[0.04] ${compact ? 'p-3' : 'p-4'}`}>
+          <div className="h-3 w-2/3 rounded bg-white/10" />
+          <div className="mt-3 h-2 w-1/2 rounded bg-white/10" />
+          {!compact ? <div className="mt-3 h-2 w-5/6 rounded bg-white/10" /> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function GraphSkeleton() {
+  return (
+    <div className="relative h-full overflow-hidden bg-black/20" aria-busy="true" aria-label="Loading graph">
+      <div className="absolute left-[14%] top-[38%] h-12 w-32 animate-pulse rounded-xl border border-cyan/20 bg-cyan/10" />
+      <div className="absolute left-[40%] top-[24%] h-12 w-32 animate-pulse rounded-xl border border-cyan/20 bg-cyan/10" />
+      <div className="absolute left-[66%] top-[42%] h-12 w-32 animate-pulse rounded-xl border border-cyan/20 bg-cyan/10" />
+      <div className="absolute left-[27%] top-[44%] h-px w-[14%] animate-pulse bg-cyan/20" />
+      <div className="absolute left-[53%] top-[36%] h-px w-[14%] animate-pulse bg-cyan/20" />
+    </div>
+  );
+}
+
+function StatValue({ children, className, isLoading, isError }: { children: React.ReactNode; className: string; isLoading: boolean; isError: boolean }) {
+  return (
+    <div className={`flex h-10 items-center font-mono text-3xl font-semibold ${className}`}>
+      {isLoading ? <InlineSkeleton width="w-20" /> : isError ? <span className="text-xl text-rose-300">--</span> : children}
+    </div>
+  );
+}
+
+function InlineSkeleton({ width }: { width: string }) {
+  return <span className={`inline-block h-6 ${width} animate-pulse rounded bg-white/10 align-middle`} />;
 }
