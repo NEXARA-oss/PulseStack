@@ -58,10 +58,20 @@ const streamHandler: WebsocketHandler = async (socket) => {
   const nc = await infra.nats();
   const subscription = nc.subscribe('pulse.events.>');
   (async () => {
-    for await (const message of subscription) {
-      socket.send(message.string());
+    try {
+      for await (const message of subscription) {
+        try {
+          socket.send(message.string());
+        } catch {
+          // Socket closed — stop iterating
+          break;
+        }
+      }
+    } catch (err) {
+      // Subscription or NATS error
+      console.error('Event stream error:', err);
     }
-  })();
+  })().catch((err) => console.error('Event stream unhandled error:', err));
   socket.on('close', () => subscription.unsubscribe());
 };
 
