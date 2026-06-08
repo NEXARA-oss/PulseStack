@@ -25,7 +25,7 @@ type WebsocketLike = {
   on(event: 'close', listener: () => void): void;
 };
 
-type WebsocketHandlerLike = (socket: WebsocketLike) => void | Promise<void>;
+type WebsocketHandlerLike = (socket: WebsocketLike, request: JwtCapableRequest) => void | Promise<void>;
 
 const app = (await createBaseServer('pulse-gateway')) as JwtCapableApp;
 
@@ -144,13 +144,31 @@ app.post('/api/replay/:executionId', async (request) =>
   }),
 );
 
-const eventsStreamHandler: WebsocketHandlerLike = async (socket) => {
+app.get('/ws/events', { websocket: true }, async (socket, request) => {
+  if (!env.AUTH_DISABLED) {
+    const bearer = request.headers.authorization?.replace(/^Bearer\s+/i, '');
+    const apiKey = request.headers['x-api-key'];
+    if (apiKey !== env.API_KEY && !bearer) {
+      socket.send(JSON.stringify({ error: 'Unauthorized' }));
+      socket.close();
+      return;
+    }
+    if (bearer) {
+      try {
+        await request.jwtVerify();
+      } catch {
+        socket.send(JSON.stringify({ error: 'Unauthorized' }));
+        socket.close();
+        return;
+      }
+    }
+  }
+
   const upstream = new WebSocket(`${services.events.replace('http', 'ws')}/stream`);
   upstream.onmessage = (event) => socket.send(event.data.toString());
+  upstream.onclose = () => socket.close();
   socket.on('close', () => upstream.close());
-};
-
-app.get('/ws/events', { websocket: true }, eventsStreamHandler);
+});
 
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });
 
