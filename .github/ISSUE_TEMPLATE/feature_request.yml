@@ -1,0 +1,91 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for PulseStack
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+body:
+  - type: markdown
+    value: |
+      Thanks for suggesting a new feature. Please describe the problem you are trying to solve and your proposed solution so maintainers and the community can evaluate it.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight Checklist
+      options:
+        - label: I have searched existing issues and this feature has not been requested before
+          required: true
+        - label: I have read the contributing guidelines
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What are you unable to do today?
+      placeholder: Describe the problem clearly. For example — when debugging a multi-agent workflow I cannot see which tool call introduced the latency spike.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the feature or enhancement you would like to see
+      placeholder: Describe your proposed solution in as much detail as possible
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature Area
+      description: Which part of PulseStack does this feature relate to?
+      options:
+        - Workflow Runtime
+        - DAG Execution Engine
+        - Replay Engine
+        - Tracing / OpenTelemetry
+        - Event Bus / NATS
+        - Runtime UI / Console
+        - Analytics / ClickHouse
+        - Plugin System
+        - SDK
+        - Helm / Kubernetes / Docker
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to your use case?
+      options:
+        - Critical — blocking production use
+        - High — significantly improves my workflow
+        - Medium — nice to have
+        - Low — minor improvement
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions or workarounds?
+      placeholder: Describe any alternatives you have tried or considered
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any additional context, mockups, related issues, or references that would help maintainers understand this request
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to implement this feature and open a pull request

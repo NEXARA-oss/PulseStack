@@ -1,0 +1,10 @@
+blank_issues_enabled: true
+
+contact_links:
+  - name: Ask a Question or Start a Discussion
+    url: https://github.com/sreerevanth/PulseStack/discussions
+    about: For questions, ideas, and general discussion please use GitHub Discussions instead of opening an issue.
+
+  - name: PulseStack Contributing Guide
+    url: https://github.com/sreerevanth/PulseStack/blob/main/CONTRIBUTING.md
+    about: Read the contributing guide before opening your first issue or pull request.
