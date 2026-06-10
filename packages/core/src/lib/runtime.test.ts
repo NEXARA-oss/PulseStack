@@ -6,11 +6,7 @@ import type {
   TraceSpan,
 } from '@pulsestack/contracts';
 import type { PulseInfra } from './infra.js';
-
-import type { EventEnvelope, WorkflowDefinition, ExecutionSnapshot, TraceSpan } from '@pulsestack/contracts';
-
 import { WorkflowRuntime } from './runtime.js';
-import type { PulseInfra } from './infra.js';
 
 class RuntimeInfraMock {
   events: EventEnvelope[] = [];
@@ -52,6 +48,20 @@ describe('WorkflowRuntime', () => {
     );
     expect(tenantEvents.length).toBeGreaterThan(0);
     expect(tenantEvents.every((event) => event.tenantId === workflow.tenantId)).toBe(true);
+  });
+
+  it('rejects execution context from another tenant', async () => {
+    const infra = new RuntimeInfraMock();
+    const runtime = new WorkflowRuntime(infra as never);
+
+    await expect(
+      runtime.execute({
+        workflow,
+        input: {},
+        initiatedBy: 'test',
+        context: { tenantId: 'tenant_other' },
+      }),
+    ).rejects.toThrow('Execution context tenant does not match workflow tenant');
   });
 });
 

@@ -124,7 +124,11 @@ export default function App() {
       if (!isMounted) return;
       setWsStatus('connecting');
       const gatewayUrl = import.meta.env.VITE_GATEWAY_URL ?? 'http://localhost:4000';
-      const wsUrl = `${gatewayUrl.replace('http', 'ws')}/ws/events`;
+      const tenantId = import.meta.env.VITE_TENANT_ID;
+      const tenantQuery = typeof tenantId === 'string' && tenantId.trim()
+        ? `?tenantId=${encodeURIComponent(tenantId.trim())}`
+        : '';
+      const wsUrl = `${gatewayUrl.replace('http', 'ws')}/ws/events${tenantQuery}`;
 
       socket = new WebSocket(wsUrl);
 

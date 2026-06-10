@@ -68,20 +68,30 @@ export class PulseInfra {
     );
   }
 
-  async getExecution(executionId: string) {
-    const result = await this.pg.query<ExecutionRecord>('select * from executions where id = $1', [executionId]);
+  async getExecution(executionId: string, tenantId?: string) {
+    const result = await this.pg.query<ExecutionRecord>(
+      tenantId
+        ? 'select * from executions where id = $1 and tenant_id = $2'
+        : 'select * from executions where id = $1',
+      tenantId ? [executionId, tenantId] : [executionId],
+    );
     return result.rows[0] ?? null;
   }
 
-  async listExecutions(limit = 25, offset = 0) {
+  async listExecutions(limit = 25, offset = 0, tenantId?: string) {
     const safeLimit = Math.min(Math.max(limit, 1), 200);
     const safeOffset = Math.max(offset, 0);
     const result = await this.pg.query<ExecutionRecord>(
-      'select * from executions order by created_at desc limit $1 offset $2',
-      [safeLimit, safeOffset],
+      tenantId
+        ? 'select * from executions where tenant_id = $3 order by created_at desc limit $1 offset $2'
+        : 'select * from executions order by created_at desc limit $1 offset $2',
+      tenantId ? [safeLimit, safeOffset, tenantId] : [safeLimit, safeOffset],
     );
     const countResult = await this.pg.query<{ total: string }>(
-      'select count(*) as total from executions',
+      tenantId
+        ? 'select count(*) as total from executions where tenant_id = $1'
+        : 'select count(*) as total from executions',
+      tenantId ? [tenantId] : [],
     );
     const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
     return { rows: result.rows, total, limit: safeLimit, offset: safeOffset };
@@ -102,7 +112,11 @@ export class PulseInfra {
     );
   }
 
-  async getSnapshots(executionId: string) {
+  async getSnapshots(executionId: string, tenantId?: string) {
+    if (tenantId) {
+      const execution = await this.getExecution(executionId, tenantId);
+      if (!execution) return [];
+    }
     const result = await this.pg.query(
       'select * from snapshots where execution_id = $1 order by sequence asc',
       [executionId],
@@ -157,16 +171,22 @@ export class PulseInfra {
     });
   }
 
-  async readRecentEvents(limit = 200) {
+  async readRecentEvents(limit = 200, tenantId?: string) {
     const result = await this.clickhouse.query({
-      query: `select * from events order by timestamp desc limit {limit:UInt32}`,
-      query_params: { limit },
+      query: tenantId
+        ? `select * from events where tenant_id = {tenantId:String} order by timestamp desc limit {limit:UInt32}`
+        : `select * from events order by timestamp desc limit {limit:UInt32}`,
+      query_params: tenantId ? { limit, tenantId } : { limit },
       format: 'JSONEachRow',
     });
     return result.json();
   }
 
-  async readTrace(executionId: string) {
+  async readTrace(executionId: string, tenantId?: string) {
+    if (tenantId) {
+      const execution = await this.getExecution(executionId, tenantId);
+      if (!execution) return [];
+    }
     const result = await this.clickhouse.query({
       query: `select * from traces where execution_id = {executionId:String} order by started_at asc`,
       query_params: { executionId },
@@ -198,27 +218,45 @@ export class PulseInfra {
     });
   }
 
-  async readMetrics() {
+  async readMetrics(tenantId?: string) {
     const [totals, latency, executionTotals, recentExecutions] = await Promise.all([
       this.clickhouse.query({
-        query:
-          "select type, count() as total from events group by type order by total desc format JSONEachRow",
+        query: tenantId
+          ? "select type, count() as total from events where tenant_id = {tenantId:String} group by type order by total desc format JSONEachRow"
+          : "select type, count() as total from events group by type order by total desc format JSONEachRow",
+        query_params: tenantId ? { tenantId } : undefined,
       }),
       this.clickhouse.query({
-        query:
-          "select kind, avg(dateDiff('millisecond', parseDateTime64BestEffort(started_at), parseDateTime64BestEffort(ended_at))) as avg_latency_ms from traces where ended_at != '' group by kind format JSONEachRow",
+        query: tenantId
+          ? "select kind, avg(dateDiff('millisecond', parseDateTime64BestEffort(started_at), parseDateTime64BestEffort(ended_at))) as avg_latency_ms from traces where ended_at != '' and JSONExtractString(attributes, 'pulsestack.tenant.id') = {tenantId:String} group by kind format JSONEachRow"
+          : "select kind, avg(dateDiff('millisecond', parseDateTime64BestEffort(started_at), parseDateTime64BestEffort(ended_at))) as avg_latency_ms from traces where ended_at != '' group by kind format JSONEachRow",
+        query_params: tenantId ? { tenantId } : undefined,
       }),
       this.pg.query<{ status: string; total: string }>(
-        `select status, count(*)::text as total
-         from executions
-         group by status
-         order by total desc`,
+        tenantId
+          ? `select status, count(*)::text as total
+             from executions
+             where tenant_id = $1
+             group by status
+             order by total desc`
+          : `select status, count(*)::text as total
+             from executions
+             group by status
+             order by total desc`,
+        tenantId ? [tenantId] : [],
       ),
       this.pg.query<{ id: string; workflow_id: string; status: string; updated_at: string }>(
-        `select id, workflow_id, status, updated_at
-         from executions
-         order by updated_at desc
-         limit 10`,
+        tenantId
+          ? `select id, workflow_id, status, updated_at
+             from executions
+             where tenant_id = $1
+             order by updated_at desc
+             limit 10`
+          : `select id, workflow_id, status, updated_at
+             from executions
+             order by updated_at desc
+             limit 10`,
+        tenantId ? [tenantId] : [],
       ),
     ]);
     const executionsByStatus = executionTotals.rows.map((row) => ({

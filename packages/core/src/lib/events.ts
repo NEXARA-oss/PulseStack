@@ -22,6 +22,9 @@ export function createEvent(input: {
   tags?: Record<string, string>;
 }): EventEnvelope {
   const executionContext = input.executionContext;
+  if (executionContext && executionContext.tenantId !== input.tenantId) {
+    throw new Error('Event tenant does not match execution context tenant');
+  }
   return eventEnvelopeSchema.parse({
     id: createId('evt'),
     version: 1,
