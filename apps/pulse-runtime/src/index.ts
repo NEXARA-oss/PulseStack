@@ -3,6 +3,7 @@ import {
   initializeTracing,
   loadEnv,
   PulseInfra,
+  tenantIdFromHeaders,
   WorkflowRuntime,
 } from '@pulsestack/core';
 import type { ExecutionRequest } from '@pulsestack/contracts';
@@ -48,18 +49,31 @@ type RuntimeGrpcDescriptor = GrpcObject & {
   };
 };
 
-app.post('/executions', async (request) => {
+app.post('/executions', async (request, reply) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const body = request.body as ExecutionRequest;
+  if (body.workflow?.tenantId !== tenantId || (body.context?.tenantId && body.context.tenantId !== tenantId)) {
+    return reply.code(403).send({ message: 'Request tenant does not match workflow tenant' });
+  }
   return runtime.execute(
     mergeHeaderTraceContext(
-      request.body as ExecutionRequest,
+      body,
       request.headers as Record<string, string | string[] | undefined>,
     ),
   );
 });
 
 app.get('/executions/:executionId', async (request, reply) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
   const execution = await infra.getExecution(
     (request.params as { executionId: string }).executionId,
+    tenantId,
   );
   if (!execution)
     return reply.code(404).send({ message: 'Execution not found' });
@@ -67,10 +81,14 @@ app.get('/executions/:executionId', async (request, reply) => {
 });
 
 app.get('/executions', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
   const query = request.query as { limit?: string; offset?: string };
   const limit = query.limit ? parseInt(query.limit, 10) : 25;
   const offset = query.offset ? parseInt(query.offset, 10) : 0;
-  return infra.listExecutions(limit, offset);
+  return infra.listExecutions(limit, offset, tenantId);
 });
 
 const protoPath = path.resolve(process.cwd(), 'proto/pulsestack.proto');
@@ -91,7 +109,15 @@ grpcServer.addService(grpcDescriptor.pulsestack.runtime.Runtime.service, {
     callback: sendUnaryData<RuntimeExecutionResponse>,
   ) => {
     try {
-      const execution = await infra.getExecution(call.request.execution_id);
+      const metadataTenant = call.metadata.get('x-tenant-id')[0];
+      const tenantId = tenantIdFromHeaders(
+        {
+          'x-tenant-id':
+            typeof metadataTenant === 'string' ? metadataTenant : undefined,
+        },
+        env.TENANT_ID,
+      );
+      const execution = await infra.getExecution(call.request.execution_id, tenantId);
       callback(null, {
         execution_id: execution?.id ?? '',
         workflow_id: execution?.workflow_id ?? '',

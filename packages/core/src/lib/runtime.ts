@@ -50,6 +50,9 @@ export class WorkflowRuntime {
 
   async execute(requestInput: ExecutionRequest) {
     const request = executionRequestSchema.parse(requestInput);
+    if (request.context?.tenantId && request.context.tenantId !== request.workflow.tenantId) {
+      throw new Error('Execution context tenant does not match workflow tenant');
+    }
     validateWorkflowDag(request.workflow);
     const executionId = request.context?.executionId ?? createId('exec');
 
@@ -118,24 +121,24 @@ export class WorkflowRuntime {
         const retryState: Record<string, unknown> = {};
         const results: StepResult[] = [];
 
-          try {
-            for (const [index, step] of request.workflow.steps.entries()) {
-              await withRuntimeSpan(
-                `workflow.step.${step.kind}`,
-                {
-                  attributes: {
-                    'pulsestack.execution.id': executionId,
-                    'pulsestack.workflow.id': request.workflow.id,
-                    'pulsestack.step.id': step.id,
-                    'pulsestack.step.name': step.name,
-                    'pulsestack.step.kind': step.kind,
-                    'pulsestack.step.index': index,
-                    'pulsestack.step.depends_on': step.dependsOn.join(','),
-                    'pulsestack.state.keys': Object.keys(state).join(','),
-                    'pulsestack.step.retry.max_attempts': normalizeRetryPolicy(
-                      step.retry,
-                    ).maxAttempts,
-                  },
+        try {
+          for (const [index, step] of request.workflow.steps.entries()) {
+            await withRuntimeSpan(
+              `workflow.step.${step.kind}`,
+              {
+                attributes: {
+                  'pulsestack.execution.id': executionId,
+                  'pulsestack.workflow.id': request.workflow.id,
+                  'pulsestack.tenant.id': request.workflow.tenantId,
+                  'pulsestack.step.id': step.id,
+                  'pulsestack.step.name': step.name,
+                  'pulsestack.step.kind': step.kind,
+                  'pulsestack.step.index': index,
+                  'pulsestack.step.depends_on': step.dependsOn.join(','),
+                  'pulsestack.state.keys': Object.keys(state).join(','),
+                  'pulsestack.step.retry.max_attempts': normalizeRetryPolicy(
+                    step.retry,
+                  ).maxAttempts,
                 },
               },
               async (otelStepSpan) => {
@@ -164,31 +167,15 @@ export class WorkflowRuntime {
                     executionContext,
                     spanId: span.spanId,
                   });
-
-                  let result: StepResult;
-                  try {
-                    result = await this.runStepWithRetry({
-                      step,
-                      state,
-                      traceId,
-                      executionId,
-                      workflowId: request.workflow.id,
-                      tenantId: request.workflow.tenantId,
-                      correlationId: request.workflow.correlationId,
-                      spanId: span.spanId,
+                } catch (error) {
+                  if (error instanceof StepRetryExhaustedError) {
+                    retryState[error.stepId] = error.retry;
+                    Object.assign(state, { __retry: retryState });
+                    otelStepSpan.setAttributes({
+                      'pulsestack.step.retry.exhausted': true,
+                      'pulsestack.step.retry.max_attempts':
+                        error.retry.maxAttempts,
                     });
-                  } catch (error) {
-                    if (error instanceof StepRetryExhaustedError) {
-                      retryState[error.stepId] = error.retry;
-                      Object.assign(state, { __retry: retryState });
-                      otelStepSpan.setAttributes({
-                        'pulsestack.step.retry.exhausted': true,
-                        'pulsestack.step.retry.max_attempts':
-                          error.retry.maxAttempts,
-                      });
-                    }
-                    await this.failSpan(span, error);
-                    throw error;
                   }
                   await this.failSpan(span, error);
                   throw error;
@@ -227,10 +214,10 @@ export class WorkflowRuntime {
                 await this.finishSpan(span, result);
               },
             );
-            throw error;
           }
-
-          const output = {
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Workflow failed';
+          const failureOutput = {
             steps: results,
             totalCostUsd: results.reduce((sum, item) => sum + item.costUsd, 0),
             totalTokens: results.reduce((sum, item) => sum + item.tokens, 0),
@@ -240,14 +227,14 @@ export class WorkflowRuntime {
           };
 
           workflowSpan.setAttributes({
-            'pulsestack.workflow.total_cost_usd': output.totalCostUsd,
-            'pulsestack.workflow.total_tokens': output.totalTokens,
+            'pulsestack.workflow.total_cost_usd': failureOutput.totalCostUsd,
+            'pulsestack.workflow.total_tokens': failureOutput.totalTokens,
           });
-          await this.infra.completeExecution(executionId, 'completed', output);
+          await this.infra.completeExecution(executionId, 'failed', failureOutput);
           await publishEvent(
             this.infra,
             createEvent({
-              type: 'workflow.completed',
+              type: 'workflow.failed',
               source: this.source,
               tenantId: request.workflow.tenantId,
               correlationId: request.workflow.correlationId,

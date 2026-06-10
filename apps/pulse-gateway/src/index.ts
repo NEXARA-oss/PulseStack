@@ -1,5 +1,5 @@
 import { json } from 'stream/consumers';
-import { can, createBaseServer, loadEnv, type Permission, type Principal } from '@pulsestack/core';
+import { can, createBaseServer, isTenantMatch, loadEnv, tenantIdFromHeaders, type Permission, type Principal } from '@pulsestack/core';
 import { request } from 'undici';
 
 const env = loadEnv();
@@ -15,6 +15,7 @@ type JwtCapableRequest = {
   headers: {
     authorization?: string;
     'x-api-key'?: string | string[];
+    'x-tenant-id'?: string | string[];
   };
   jwtVerify(): Promise<Principal>;
   user?: Principal;
@@ -22,6 +23,7 @@ type JwtCapableRequest = {
 
 type WebsocketLike = {
   send(data: string): void;
+  close(): void;
   on(event: 'close', listener: () => void): void;
 };
 
@@ -51,6 +53,7 @@ async function proxyJson(
     headers: {
       'content-type': 'application/json',
       ...forwardLineageHeaders(init?.headers),
+      ...forwardTenantHeader(init?.headers),
     },
     body: init?.body ? JSON.stringify(init.body) : undefined,
   });
@@ -85,18 +88,19 @@ app.addHook('preHandler', async (request, reply) => {
   if (!permission) return;
   if (env.AUTH_DISABLED) {
     jwtRequest.user = { sub: 'local', tenantId: env.TENANT_ID, role: 'admin' };
-    return;
+    return validateRequestTenant(jwtRequest, reply);
   }
   const bearer = jwtRequest.headers.authorization?.replace(/^Bearer\s+/i, '');
   const apiKey = jwtRequest.headers['x-api-key'];
   if (apiKey === env.API_KEY) {
     jwtRequest.user = { sub: 'api-key', tenantId: env.TENANT_ID, role: 'admin' };
-    return;
+    return validateRequestTenant(jwtRequest, reply);
   }
   if (!bearer) return reply.code(401).send({ message: 'Unauthorized' });
   const principal = await jwtRequest.jwtVerify();
   jwtRequest.user = principal;
   if (!can(principal, permission)) return reply.code(403).send({ message: 'Forbidden', permission });
+  return validateRequestTenant(jwtRequest, reply);
 });
 
 app.post('/api/runtime/executions', async (request) =>
@@ -155,22 +159,56 @@ app.get('/ws/events', { websocket: true }, async (socket, request) => {
     }
     if (bearer) {
       try {
-        await request.jwtVerify();
+        request.user = await request.jwtVerify();
       } catch {
         socket.send(JSON.stringify({ error: 'Unauthorized' }));
         socket.close();
         return;
       }
     }
+    if (apiKey === env.API_KEY) {
+      request.user = { sub: 'api-key', tenantId: env.TENANT_ID, role: 'admin' };
+    }
+  } else {
+    request.user = { sub: 'local', tenantId: env.TENANT_ID, role: 'admin' };
   }
 
-  const upstream = new WebSocket(`${services.events.replace('http', 'ws')}/stream`);
+  const queryTenantId = (request as unknown as { query?: { tenantId?: string } }).query?.tenantId;
+  const requestedTenantId = tenantIdFromHeaders(
+    {
+      ...request.headers,
+      ...(queryTenantId ? { 'x-tenant-id': queryTenantId } : {}),
+    },
+    request.user?.tenantId ?? env.TENANT_ID,
+  );
+  if (!isTenantMatch(request.user?.tenantId, requestedTenantId)) {
+    socket.send(JSON.stringify({ error: 'Forbidden', reason: 'Tenant mismatch' }));
+    socket.close();
+    return;
+  }
+
+  const upstream = new WebSocket(
+    `${services.events.replace('http', 'ws')}/stream?tenantId=${encodeURIComponent(requestedTenantId)}`,
+  );
   upstream.onmessage = (event) => socket.send(event.data.toString());
   upstream.onclose = () => socket.close();
   socket.on('close', () => upstream.close());
 });
 
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });
+
+function validateRequestTenant(request: JwtCapableRequest, reply: any) {
+  let requestedTenantId: string;
+  try {
+    requestedTenantId = tenantIdFromHeaders(request.headers, request.user?.tenantId ?? env.TENANT_ID);
+  } catch {
+    return reply.code(400).send({ message: 'Missing or invalid tenant context' });
+  }
+  if (!isTenantMatch(request.user?.tenantId, requestedTenantId)) {
+    return reply.code(403).send({ message: 'Forbidden', reason: 'Tenant mismatch' });
+  }
+  request.headers['x-tenant-id'] = requestedTenantId;
+}
 
 function forwardLineageHeaders(
   headers: Record<string, string | string[] | undefined> | undefined,
@@ -181,6 +219,13 @@ function forwardLineageHeaders(
     ...singleHeader(headers, 'tracestate'),
     ...singleHeader(headers, 'x-correlation-id'),
   };
+}
+
+function forwardTenantHeader(
+  headers: Record<string, string | string[] | undefined> | undefined,
+) {
+  if (!headers) return {};
+  return singleHeader(headers, 'x-tenant-id');
 }
 
 function singleHeader(

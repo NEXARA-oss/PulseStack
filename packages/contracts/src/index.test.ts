@@ -37,6 +37,18 @@ describe('contracts', () => {
     ).not.toThrow();
   });
 
+  it('rejects blank tenant identifiers', () => {
+    expect(() =>
+      executionContextSchema.parse({
+        executionId: 'exec_1',
+        workflowId: 'wf_1',
+        tenantId: ' ',
+        correlationId: 'corr',
+        traceId: 'trace_1',
+      }),
+    ).toThrow();
+  });
+
   it('validates bounded retry policies on workflow steps', () => {
     const step = workflowStepSchema.parse({
       id: 'fetch_logs',

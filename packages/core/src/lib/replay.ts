@@ -6,23 +6,35 @@ import type { ExecutionContext } from '@pulsestack/contracts';
 export class ReplayEngine {
   constructor(private readonly infra: PulseInfra, private readonly source = 'pulse-replay') {}
 
-  async replayExecution(executionId: string) {
-    const execution = await this.infra.getExecution(executionId);
+  async replayExecution(executionId: string, tenantId?: string) {
+    const execution = await this.infra.getExecution(executionId, tenantId);
     if (!execution) {
       throw new Error(`Execution ${executionId} not found`);
     }
-    const snapshots = await this.infra.getSnapshots(executionId);
+    const executionTenantId = execution.tenant_id ?? 'unknown';
+    if (tenantId && executionTenantId !== tenantId) {
+      throw new Error(`Execution ${executionId} not found`);
+    }
+    const snapshots = await this.infra.getSnapshots(executionId, executionTenantId);
     const replayId = createId('replay');
-   
-const tenantId = execution.tenant_id ?? 'unknown';
-const correlationId = execution.correlation_id ?? executionId;
+    const correlationId = execution.correlation_id ?? executionId;
+    const originalContext = execution.output?.executionContext as ExecutionContext | undefined;
+    const replayContext: ExecutionContext = {
+      executionId,
+      workflowId: execution.workflow_id,
+      tenantId: executionTenantId,
+      correlationId,
+      traceId: originalContext?.traceId ?? createId('trace'),
+      replaySessionId: replayId,
+    };
+
     await publishEvent(
       this.infra,
       createEvent({
         type: 'replay.started',
         source: this.source,
-tenantId,
-correlationId,
+        tenantId: executionTenantId,
+        correlationId,
         workflowId: execution.workflow_id,
         executionId,
         executionContext: replayContext,
@@ -48,8 +60,8 @@ correlationId,
       createEvent({
         type: 'replay.completed',
         source: this.source,
-        tenantId,
-       correlationId,
+        tenantId: executionTenantId,
+        correlationId,
         workflowId: execution.workflow_id,
         executionId,
         executionContext: replayContext,

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const tenantIdSchema = z.string().trim().min(1);
+
 export const eventTypeSchema = z.enum([
   'workflow.started',
   'workflow.completed',
@@ -41,7 +43,7 @@ export const workflowDefinitionSchema = z.object({
   id: z.string(),
   name: z.string(),
   version: z.string(),
-  tenantId: z.string(),
+  tenantId: tenantIdSchema,
   correlationId: z.string(),
   metadata: z.record(z.string(), z.unknown()).default({}),
   steps: z.array(workflowStepSchema).min(1),
@@ -50,7 +52,7 @@ export const workflowDefinitionSchema = z.object({
 export const executionContextSchema = z.object({
   executionId: z.string(),
   workflowId: z.string(),
-  tenantId: z.string(),
+  tenantId: tenantIdSchema,
   correlationId: z.string(),
   traceId: z.string(),
   parentSpanId: z.string().optional(),
@@ -63,7 +65,7 @@ export const eventEnvelopeSchema = z.object({
   version: z.literal(1),
   type: eventTypeSchema,
   source: z.string(),
-  tenantId: z.string(),
+  tenantId: tenantIdSchema,
   correlationId: z.string(),
   workflowId: z.string().optional(),
   executionId: z.string().optional(),
@@ -133,6 +135,7 @@ export const pluginManifestSchema = z.object({
 });
 
 export type EventType = z.infer<typeof eventTypeSchema>;
+export type TenantId = z.infer<typeof tenantIdSchema>;
 export type RetryPolicy = z.infer<typeof retryPolicySchema>;
 export type WorkflowStep = z.infer<typeof workflowStepSchema>;
 export type WorkflowDefinition = z.infer<typeof workflowDefinitionSchema>;

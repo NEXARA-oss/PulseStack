@@ -51,4 +51,30 @@ describe('ReplayEngine lineage', () => {
       ),
     ).toBe(true);
   });
+
+  it('does not replay executions outside the requested tenant', async () => {
+    const infra = {
+      getExecution: async (_executionId: string, tenantId?: string) =>
+        tenantId === 'tenant_other'
+          ? null
+          : {
+              id: 'exec_original',
+              workflow_id: 'wf_replay',
+              tenant_id: 'tenant_replay',
+              correlation_id: 'corr_replay',
+              status: 'completed',
+              input: {},
+              output: { executionContext, result: 'ok' },
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+      getSnapshots: async () => [],
+      writeEvent: async () => undefined,
+    } as unknown as PulseInfra;
+    const replay = new ReplayEngine(infra, 'test-replay');
+
+    await expect(
+      replay.replayExecution('exec_original', 'tenant_other'),
+    ).rejects.toThrow('Execution exec_original not found');
+  });
 });
