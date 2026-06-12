@@ -125,6 +125,7 @@ export class WorkflowRuntime {
                   executionId,
                   workflowId: request.workflow.id,
                   tenantId: request.workflow.tenantId,
+                  correlationId: request.workflow.correlationId, 
                   parentSpanId: workflowSpanId,
                   step,
                   state,
@@ -421,7 +422,7 @@ export class WorkflowRuntime {
     workflowId: string;
 
     tenantId: string;
-
+    correlationId: string;
     parentSpanId?: string;
 
     step: WorkflowStep;
@@ -452,7 +453,7 @@ export class WorkflowRuntime {
         type: 'span.recorded',
         source: this.source,
         tenantId: args.tenantId,
-        correlationId: args.traceId,
+        correlationId: args.correlationId,
         workflowId: args.workflowId,
         executionId: args.executionId,
         spanId: span.spanId,
