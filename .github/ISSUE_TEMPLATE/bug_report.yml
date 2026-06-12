@@ -1,0 +1,125 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in PulseStack
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+assignees: []
+body:
+  - type: markdown
+    value: |
+      Thanks for taking the time to report a bug. Please fill out the sections below so maintainers can investigate quickly.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight Checklist
+      description: Please confirm before submitting
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: I have read the contributing guidelines
+          required: true
+        - label: I am using the latest version of PulseStack
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of the bug
+      placeholder: Describe what went wrong
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Exact steps to reproduce the behavior
+      placeholder: |
+        1. Start infrastructure with docker compose
+        2. Submit workflow payload via Gateway API
+        3. Observe trace output in Runtime UI
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: Describe the expected outcome
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened? Include error messages, logs, or stack traces if available.
+      placeholder: Describe what actually happened
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected_area
+    attributes:
+      label: Affected Area
+      description: Which part of PulseStack is affected?
+      options:
+        - pulse-gateway
+        - pulse-runtime
+        - pulse-events
+        - pulse-web (Runtime UI)
+        - DAG Execution Engine
+        - Replay Engine
+        - Tracing / OpenTelemetry
+        - Event Bus / NATS
+        - Plugin System
+        - Helm / Kubernetes / Docker
+        - SDK / packages
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: workflow_payload
+    attributes:
+      label: Workflow Payload (if applicable)
+      description: Paste the workflow JSON payload that triggered the issue. Remove any sensitive data before submitting.
+      render: json
+      placeholder: |
+        {
+          "workflow": {
+            "id": "wf_example",
+            "steps": []
+          }
+        }
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Please provide your environment details
+      placeholder: |
+        - OS: Ubuntu 22.04 / macOS 14 / Windows 11
+        - Node.js version: 20.x
+        - pnpm version: 9.x
+        - Docker version: 24.x
+        - PulseStack version or commit:
+        - Deployment: local / Docker Compose / Kubernetes
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Screenshots
+      description: Paste relevant logs, error output, or attach screenshots. Use code blocks for log output.
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, related issues, or notes for maintainers

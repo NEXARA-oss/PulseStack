@@ -7,6 +7,16 @@ export type WorkflowEvent = {
   status: 'pending' | 'running' | 'success' | 'failed';
   timestamp: number;
   logs?: string;
+  executionContext?: {
+    executionId: string;
+    workflowId: string;
+    tenantId: string;
+    correlationId: string;
+    traceId: string;
+    parentSpanId?: string;
+    retryAttempt?: number;
+    replaySessionId?: string;
+  };
 };
 
 export function useWorkflowReplay(events: WorkflowEvent[]) {
@@ -33,7 +43,7 @@ export function useWorkflowReplay(events: WorkflowEvent[]) {
 
   // The Playback Engine (Runs when isPlaying is true)
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
     
     if (isPlaying && currentStepIndex < events.length - 1) {
       timer = setInterval(() => {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { eventEnvelopeSchema, workflowStepSchema } from './index.js';
+import {
+  eventEnvelopeSchema,
+  executionContextSchema,
+  workflowStepSchema,
+} from './index.js';
 
 describe('contracts', () => {
   it('validates event envelopes', () => {
@@ -16,6 +20,33 @@ describe('contracts', () => {
         tags: {},
       }),
     ).not.toThrow();
+  });
+
+  it('validates shared execution context lineage', () => {
+    expect(() =>
+      executionContextSchema.parse({
+        executionId: 'exec_1',
+        workflowId: 'wf_1',
+        tenantId: 'tenant',
+        correlationId: 'corr',
+        traceId: 'trace_1',
+        parentSpanId: 'span_0',
+        retryAttempt: 2,
+        replaySessionId: 'replay_1',
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects blank tenant identifiers', () => {
+    expect(() =>
+      executionContextSchema.parse({
+        executionId: 'exec_1',
+        workflowId: 'wf_1',
+        tenantId: ' ',
+        correlationId: 'corr',
+        traceId: 'trace_1',
+      }),
+    ).toThrow();
   });
 
   it('validates bounded retry policies on workflow steps', () => {

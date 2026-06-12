@@ -1,4 +1,5 @@
-import { can, createBaseServer, loadEnv, type Permission, type Principal } from '@pulsestack/core';
+import { json } from 'stream/consumers';
+import { can, createBaseServer, isTenantMatch, loadEnv, tenantIdFromHeaders, type Permission, type Principal } from '@pulsestack/core';
 import { request } from 'undici';
 
 const env = loadEnv();
@@ -14,6 +15,7 @@ type JwtCapableRequest = {
   headers: {
     authorization?: string;
     'x-api-key'?: string | string[];
+    'x-tenant-id'?: string | string[];
   };
   jwtVerify(): Promise<Principal>;
   user?: Principal;
@@ -21,10 +23,11 @@ type JwtCapableRequest = {
 
 type WebsocketLike = {
   send(data: string): void;
+  close(): void;
   on(event: 'close', listener: () => void): void;
 };
 
-type WebsocketHandlerLike = (socket: WebsocketLike) => void | Promise<void>;
+type WebsocketHandlerLike = (socket: WebsocketLike, request: JwtCapableRequest) => void | Promise<void>;
 
 const app = (await createBaseServer('pulse-gateway')) as JwtCapableApp;
 
@@ -37,19 +40,30 @@ const services = {
   graph: process.env.GRAPH_URL ?? 'http://localhost:4106',
 };
 
-async function proxyJson(url: string, init?: { method?: string; body?: unknown }) {
+async function proxyJson(
+  url: string,
+  init?: {
+    method?: string;
+    body?: unknown;
+    headers?: Record<string, string | string[] | undefined>;
+  },
+) {
   const response = await request(url, {
     method: init?.method ?? 'GET',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...forwardLineageHeaders(init?.headers),
+      ...forwardTenantHeader(init?.headers),
+    },
     body: init?.body ? JSON.stringify(init.body) : undefined,
   });
-  return response.body.json();
+  return await json(response.body);
 }
 
-app.post('/auth/token', async (request) => {
+app.post('/auth/token', async (request, reply) => {
   const body = (request.body as { apiKey?: string }) ?? {};
   if (body.apiKey !== env.API_KEY) {
-    return app.jwt.sign({ sub: 'anonymous', tenantId: env.TENANT_ID, role: 'viewer', denied: true });
+    return reply.code(401).send({ message: 'Unauthorized' });
   }
   // Role is always assigned server-side. Accepting a caller-supplied role field
   // would allow any holder of a valid API key to self-escalate to admin.
@@ -74,52 +88,151 @@ app.addHook('preHandler', async (request, reply) => {
   if (!permission) return;
   if (env.AUTH_DISABLED) {
     jwtRequest.user = { sub: 'local', tenantId: env.TENANT_ID, role: 'admin' };
-    return;
+    return validateRequestTenant(jwtRequest, reply);
   }
   const bearer = jwtRequest.headers.authorization?.replace(/^Bearer\s+/i, '');
   const apiKey = jwtRequest.headers['x-api-key'];
   if (apiKey === env.API_KEY) {
     jwtRequest.user = { sub: 'api-key', tenantId: env.TENANT_ID, role: 'admin' };
-    return;
+    return validateRequestTenant(jwtRequest, reply);
   }
   if (!bearer) return reply.code(401).send({ message: 'Unauthorized' });
   const principal = await jwtRequest.jwtVerify();
   jwtRequest.user = principal;
   if (!can(principal, permission)) return reply.code(403).send({ message: 'Forbidden', permission });
+  return validateRequestTenant(jwtRequest, reply);
 });
 
-app.post('/api/runtime/executions', async (request) => proxyJson(`${services.runtime}/executions`, { method: 'POST', body: request.body }));
+app.post('/api/runtime/executions', async (request) =>
+  proxyJson(`${services.runtime}/executions`, {
+    method: 'POST',
+    body: request.body,
+    headers: request.headers,
+  }),
+);
 app.get('/api/runtime/executions', async (request) => {
   const { limit, offset } = request.query as { limit?: string; offset?: string };
   const params = new URLSearchParams();
   if (limit) params.set('limit', limit);
   if (offset) params.set('offset', offset);
   const qs = params.toString();
-  return proxyJson(`${services.runtime}/executions${qs ? `?${qs}` : ''}`);
+  return proxyJson(`${services.runtime}/executions${qs ? `?${qs}` : ''}`, {
+    headers: request.headers,
+  });
 });
 app.get('/api/runtime/executions/:executionId', async (request) =>
-  proxyJson(`${services.runtime}/executions/${(request.params as { executionId: string }).executionId}`),
+  proxyJson(`${services.runtime}/executions/${(request.params as { executionId: string }).executionId}`, {
+    headers: request.headers,
+  }),
 );
-app.get('/api/events/recent', async () => proxyJson(`${services.events}/recent`));
+app.get('/api/events/recent', async (request) =>
+  proxyJson(`${services.events}/recent`, { headers: request.headers }),
+);
 app.get('/api/traces/:executionId', async (request) =>
-  proxyJson(`${services.trace}/executions/${(request.params as { executionId: string }).executionId}`),
+  proxyJson(`${services.trace}/executions/${(request.params as { executionId: string }).executionId}`, {
+    headers: request.headers,
+  }),
 );
 app.get('/api/graph/:executionId', async (request) =>
-  proxyJson(`${services.graph}/executions/${(request.params as { executionId: string }).executionId}/dag`),
+  proxyJson(`${services.graph}/executions/${(request.params as { executionId: string }).executionId}/dag`, {
+    headers: request.headers,
+  }),
 );
-app.get('/api/metrics/summary', async () => proxyJson(`${services.metrics}/summary`));
+app.get('/api/metrics/summary', async (request) =>
+  proxyJson(`${services.metrics}/summary`, { headers: request.headers }),
+);
 app.post('/api/replay/:executionId', async (request) =>
   proxyJson(`${services.replay}/executions/${(request.params as { executionId: string }).executionId}/replay`, {
     method: 'POST',
+    headers: request.headers,
   }),
 );
 
-const eventsStreamHandler: WebsocketHandlerLike = async (socket) => {
-  const upstream = new WebSocket(`${services.events.replace('http', 'ws')}/stream`);
-  upstream.onmessage = (event) => socket.send(event.data.toString());
-  socket.on('close', () => upstream.close());
-};
+app.get('/ws/events', { websocket: true }, async (socket, request) => {
+  if (!env.AUTH_DISABLED) {
+    const bearer = request.headers.authorization?.replace(/^Bearer\s+/i, '');
+    const apiKey = request.headers['x-api-key'];
+    if (apiKey !== env.API_KEY && !bearer) {
+      socket.send(JSON.stringify({ error: 'Unauthorized' }));
+      socket.close();
+      return;
+    }
+    if (bearer) {
+      try {
+        request.user = await request.jwtVerify();
+      } catch {
+        socket.send(JSON.stringify({ error: 'Unauthorized' }));
+        socket.close();
+        return;
+      }
+    }
+    if (apiKey === env.API_KEY) {
+      request.user = { sub: 'api-key', tenantId: env.TENANT_ID, role: 'admin' };
+    }
+  } else {
+    request.user = { sub: 'local', tenantId: env.TENANT_ID, role: 'admin' };
+  }
 
-app.get('/ws/events', { websocket: true }, eventsStreamHandler);
+  const queryTenantId = (request as unknown as { query?: { tenantId?: string } }).query?.tenantId;
+  const requestedTenantId = tenantIdFromHeaders(
+    {
+      ...request.headers,
+      ...(queryTenantId ? { 'x-tenant-id': queryTenantId } : {}),
+    },
+    request.user?.tenantId ?? env.TENANT_ID,
+  );
+  if (!isTenantMatch(request.user?.tenantId, requestedTenantId)) {
+    socket.send(JSON.stringify({ error: 'Forbidden', reason: 'Tenant mismatch' }));
+    socket.close();
+    return;
+  }
+
+  const upstream = new WebSocket(
+    `${services.events.replace('http', 'ws')}/stream?tenantId=${encodeURIComponent(requestedTenantId)}`,
+  );
+  upstream.onmessage = (event) => socket.send(event.data.toString());
+  upstream.onclose = () => socket.close();
+  socket.on('close', () => upstream.close());
+});
 
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });
+
+function validateRequestTenant(request: JwtCapableRequest, reply: any) {
+  let requestedTenantId: string;
+  try {
+    requestedTenantId = tenantIdFromHeaders(request.headers, request.user?.tenantId ?? env.TENANT_ID);
+  } catch {
+    return reply.code(400).send({ message: 'Missing or invalid tenant context' });
+  }
+  if (!isTenantMatch(request.user?.tenantId, requestedTenantId)) {
+    return reply.code(403).send({ message: 'Forbidden', reason: 'Tenant mismatch' });
+  }
+  request.headers['x-tenant-id'] = requestedTenantId;
+}
+
+function forwardLineageHeaders(
+  headers: Record<string, string | string[] | undefined> | undefined,
+) {
+  if (!headers) return {};
+  return {
+    ...singleHeader(headers, 'traceparent'),
+    ...singleHeader(headers, 'tracestate'),
+    ...singleHeader(headers, 'x-correlation-id'),
+  };
+}
+
+function forwardTenantHeader(
+  headers: Record<string, string | string[] | undefined> | undefined,
+) {
+  if (!headers) return {};
+  return singleHeader(headers, 'x-tenant-id');
+}
+
+function singleHeader(
+  headers: Record<string, string | string[] | undefined>,
+  name: string,
+) {
+  const value = headers[name];
+  const normalized = Array.isArray(value) ? value[0] : value;
+  return normalized ? { [name]: normalized } : {};
+}

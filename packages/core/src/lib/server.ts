@@ -5,8 +5,11 @@ import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import jwt from '@fastify/jwt';
+import { z } from 'zod';
 import { loadEnv } from './config.js';
 import { createLogger } from './logger.js';
+
+const tenantIdSchema = z.string().trim().min(1);
 
 export async function createBaseServer(service: string) {
   const env = loadEnv();
@@ -38,9 +41,12 @@ export async function createBaseServer(service: string) {
   await app.register(swaggerUi, { routePrefix: '/docs' });
   await app.register(websocket);
 
-  app.decorate('verifyTenant', async (request: any) => {
-    const headerTenant = request.headers['x-tenant-id'];
-    request.tenantId = typeof headerTenant === 'string' ? headerTenant : env.TENANT_ID;
+  app.decorate('verifyTenant', async (request: any, reply: any) => {
+    try {
+      request.tenantId = tenantIdFromHeaders(request.headers, env.TENANT_ID);
+    } catch {
+      return reply.code(400).send({ message: 'Missing or invalid tenant context' });
+    }
   });
 
   app.addHook('onRequest', async (request) => {
@@ -48,10 +54,26 @@ export async function createBaseServer(service: string) {
       event: 'audit.request',
       method: request.method,
       url: request.url,
-      tenantId: request.headers['x-tenant-id'] ?? env.TENANT_ID,
+      tenantId: tenantIdFromHeaders(request.headers, env.TENANT_ID),
     });
   });
 
   app.get('/health', async () => ({ status: 'ok', service }));
   return app;
+}
+
+export function tenantIdFromHeaders(
+  headers: Record<string, string | string[] | undefined>,
+  fallbackTenantId?: string,
+) {
+  const headerTenant = headerValue(headers['x-tenant-id']);
+  return tenantIdSchema.parse(headerTenant ?? fallbackTenantId);
+}
+
+export function isTenantMatch(recordTenantId: string | undefined | null, tenantId: string) {
+  return tenantIdSchema.safeParse(recordTenantId).success && recordTenantId === tenantId;
+}
+
+function headerValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
 }

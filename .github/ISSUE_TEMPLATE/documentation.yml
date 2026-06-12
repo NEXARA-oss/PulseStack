@@ -1,0 +1,83 @@
+name: Documentation Issue
+description: Report missing, incorrect, or unclear documentation
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+assignees: []
+body:
+  - type: markdown
+    value: |
+      Thanks for helping improve PulseStack documentation. Please describe the issue clearly so it can be fixed quickly.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight Checklist
+      options:
+        - label: I have searched existing issues and this has not been reported before
+          required: true
+
+  - type: dropdown
+    id: doc_type
+    attributes:
+      label: Documentation Type
+      description: What kind of documentation is affected?
+      options:
+        - README
+        - Architecture docs (docs/architecture/)
+        - API Reference
+        - Contributing Guide
+        - Environment setup / Getting Started
+        - Workflow payload examples
+        - Deployment / Helm / Kubernetes
+        - Code comments or inline docs
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Location
+      description: Where is the documentation issue? Provide a file path, URL, or section name.
+      placeholder: For example — docs/architecture/distributed-runtime.md or the RAG Pipeline section of README.md
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue Type
+      description: What kind of documentation issue is this?
+      options:
+        - Missing documentation
+        - Incorrect or outdated information
+        - Unclear or confusing explanation
+        - Broken link or reference
+        - Typo or formatting issue
+        - Example or code snippet does not work
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the documentation issue clearly
+      placeholder: What is wrong, missing, or unclear?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Fix
+      description: If you have a suggestion for how the documentation should be written or corrected, add it here
+      placeholder: Paste your suggested text or describe the correction
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to open a pull request to fix this documentation issue
