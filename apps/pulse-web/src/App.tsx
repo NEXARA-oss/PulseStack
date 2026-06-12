@@ -6,6 +6,11 @@ import ReactFlow, { Background, Controls } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { WorkflowGraph } from './components/WorkflowGraph';
 import { ReplayScrubber } from './components/ReplayScrubber';
+import {
+  SnapshotDebugger,
+  type SnapshotInspection,
+  type SnapshotTimelineItem,
+} from './components/SnapshotDebugger';
 import { useWorkflowReplay, type WorkflowEvent } from './hooks/useWorkflowReplay';
 import { fetchJson } from './lib/api';
 import { useUiStore } from './store/ui';
@@ -76,6 +81,7 @@ export default function App() {
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const [activeTab, setActiveTab] = useState<'monitor' | 'replay'>('monitor');
+  const [selectedSnapshotSequence, setSelectedSnapshotSequence] = useState<number | null>(null);
 
   const replayState = useWorkflowReplay(MOCK_EVENTS);
 
@@ -111,6 +117,39 @@ export default function App() {
     queryKey: ['trace', selectedExecutionId],
     queryFn: () => fetchJson<TraceSpan[]>(`/api/traces/${selectedExecutionId}`),
     enabled: Boolean(selectedExecutionId),
+    retry: 1,
+    retryDelay: 1000,
+  });
+
+  const snapshotTimeline = useQuery({
+    queryKey: ['replay-snapshots', selectedExecutionId],
+    queryFn: () => fetchJson<SnapshotTimelineItem[]>(`/api/replay/${selectedExecutionId}/snapshots`),
+    enabled: Boolean(selectedExecutionId),
+    retry: 1,
+    retryDelay: 1000,
+  });
+
+  useEffect(() => {
+    const rows = snapshotTimeline.data ?? [];
+    if (rows.length === 0) {
+      setSelectedSnapshotSequence(null);
+      return;
+    }
+    if (
+      selectedSnapshotSequence === null ||
+      !rows.some((row) => row.sequence === selectedSnapshotSequence)
+    ) {
+      setSelectedSnapshotSequence(rows[0].sequence);
+    }
+  }, [snapshotTimeline.data, selectedSnapshotSequence]);
+
+  const selectedSnapshot = useQuery({
+    queryKey: ['replay-snapshot', selectedExecutionId, selectedSnapshotSequence],
+    queryFn: () =>
+      fetchJson<SnapshotInspection>(
+        `/api/replay/${selectedExecutionId}/snapshots/${selectedSnapshotSequence}`,
+      ),
+    enabled: Boolean(selectedExecutionId) && selectedSnapshotSequence !== null,
     retry: 1,
     retryDelay: 1000,
   });
@@ -366,6 +405,16 @@ export default function App() {
 
                 <WorkflowGraph events={MOCK_EVENTS} currentIndex={replayState.currentStepIndex} />
                 <ReplayScrubber events={MOCK_EVENTS} replayState={replayState} />
+                <SnapshotDebugger
+                  timeline={snapshotTimeline.data}
+                  inspection={selectedSnapshot.data}
+                  selectedSequence={selectedSnapshotSequence}
+                  isLoading={snapshotTimeline.isLoading}
+                  isInspectionLoading={selectedSnapshot.isLoading}
+                  error={snapshotTimeline.error}
+                  onSelectSequence={setSelectedSnapshotSequence}
+                  onRetry={() => void snapshotTimeline.refetch()}
+                />
               </div>
             )}
           </div>

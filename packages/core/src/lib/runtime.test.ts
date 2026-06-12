@@ -164,13 +164,24 @@ describe('WorkflowRuntime retry handling', () => {
       correlationId: baseRequest.workflow.correlationId,
       retryAttempt: 1,
     });
-    expect(harness.snapshots[0].state).toMatchObject({
+    expect(harness.snapshots.map((snapshot) => snapshot.sideEffects[0]?.type)).toEqual([
+      'workflow.start',
+      'retry.boundary',
+      'tool',
+      'workflow.completion',
+    ]);
+    expect(harness.snapshots.find((snapshot) => snapshot.sideEffects[0]?.type === 'retry.boundary')?.state).toMatchObject({
       __retry: {
         fetch_logs: {
           maxAttempts: 3,
           exhausted: false,
         },
       },
+    });
+    expect(harness.snapshots.find((snapshot) => snapshot.sideEffects[0]?.type === 'retry.boundary')?.sideEffects[0]?.response).toMatchObject({
+      attempt: 1,
+      maxAttempts: 3,
+      stepId: 'fetch_logs',
     });
     expect(harness.completions.at(-1)?.status).toBe('completed');
     expect(harness.spans.at(-1)?.attributes).toMatchObject({
@@ -209,6 +220,11 @@ describe('WorkflowRuntime retry handling', () => {
       'Step fetch_logs failed after 2 attempts',
     );
 
+    expect(harness.snapshots.map((snapshot) => snapshot.sideEffects[0]?.type)).toEqual([
+      'workflow.start',
+      'retry.boundary',
+      'workflow.completion',
+    ]);
     expect(harness.events.map((event) => event.type)).toEqual(
       expect.arrayContaining([
         'workflow.started',

@@ -112,6 +112,39 @@ export const executionSnapshotSchema = z.object({
   createdAt: z.string(),
 });
 
+export const snapshotDiffEntrySchema = z.object({
+  path: z.string(),
+  before: z.unknown().optional(),
+  after: z.unknown().optional(),
+});
+
+export const snapshotDiffSchema = z.object({
+  added: z.array(snapshotDiffEntrySchema),
+  modified: z.array(snapshotDiffEntrySchema),
+  removed: z.array(snapshotDiffEntrySchema),
+});
+
+export const snapshotInspectionSchema = z.object({
+  sequence: z.number().int().nonnegative(),
+  timestamp: z.string().optional(),
+  phase: z.string(),
+  stepId: z.string().optional(),
+  stepKind: z.string().optional(),
+  retry: z
+    .object({
+      boundary: z.boolean(),
+      attempt: z.number().int().min(1).optional(),
+      maxAttempts: z.number().int().min(1).optional(),
+      exhausted: z.boolean().optional(),
+      errors: z.array(z.string()).optional(),
+    })
+    .optional(),
+  traceId: z.string().optional(),
+  spanId: z.string().optional(),
+  snapshot: executionSnapshotSchema,
+  diff: snapshotDiffSchema,
+});
+
 export const executionRequestSchema = z.object({
   workflow: workflowDefinitionSchema,
   input: z.record(z.string(), z.unknown()).default({}),
@@ -143,5 +176,8 @@ export type ExecutionContext = z.infer<typeof executionContextSchema>;
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
 export type TraceSpan = z.infer<typeof traceSpanSchema>;
 export type ExecutionSnapshot = z.infer<typeof executionSnapshotSchema>;
+export type SnapshotDiffEntry = z.infer<typeof snapshotDiffEntrySchema>;
+export type SnapshotDiff = z.infer<typeof snapshotDiffSchema>;
+export type SnapshotInspection = z.infer<typeof snapshotInspectionSchema>;
 export type ExecutionRequest = z.infer<typeof executionRequestSchema>;
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;

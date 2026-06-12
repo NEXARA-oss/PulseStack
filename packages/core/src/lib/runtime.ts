@@ -120,6 +120,51 @@ export class WorkflowRuntime {
         const state: Record<string, unknown> = { ...request.input };
         const retryState: Record<string, unknown> = {};
         const results: StepResult[] = [];
+        let snapshotSequence = 0;
+
+        const captureSnapshot = async (args: {
+          phase: string;
+          state: Record<string, unknown>;
+          sideEffects?: ExecutionSnapshot['sideEffects'];
+        }) => {
+          await this.snapshot({
+            id: createId('snap'),
+            executionId,
+            workflowId: request.workflow.id,
+            sequence: snapshotSequence,
+            state: structuredClone(args.state),
+            executionContext,
+            sideEffects:
+              args.sideEffects && args.sideEffects.length > 0
+                ? args.sideEffects
+                : [
+                    {
+                      type: args.phase,
+                      key: '__workflow',
+                      response: { phase: args.phase },
+                    },
+                  ],
+            createdAt: new Date().toISOString(),
+          });
+          snapshotSequence += 1;
+        };
+
+        await captureSnapshot({
+          phase: 'workflow.start',
+          state,
+          sideEffects: [
+            {
+              type: 'workflow.start',
+              key: '__workflow',
+              response: {
+                phase: 'workflow.start',
+                workflowId: request.workflow.id,
+                traceId,
+                spanId: workflowSpanId,
+              },
+            },
+          ],
+        });
 
         try {
           for (const [index, step] of request.workflow.steps.entries()) {
@@ -166,6 +211,36 @@ export class WorkflowRuntime {
                     correlationId: request.workflow.correlationId,
                     executionContext,
                     spanId: span.spanId,
+                    onRetryBoundary: async (boundary) => {
+                      retryState[step.id] = {
+                        maxAttempts: boundary.maxAttempts,
+                        exhausted: false,
+                        errors: boundary.errors,
+                      };
+                      Object.assign(state, { __retry: retryState });
+                      await captureSnapshot({
+                        phase: 'retry.boundary',
+                        state,
+                        sideEffects: [
+                          {
+                            type: 'retry.boundary',
+                            key: step.id,
+                            response: {
+                              phase: 'retry.boundary',
+                              stepId: step.id,
+                              stepName: step.name,
+                              stepKind: step.kind,
+                              attempt: boundary.attempt,
+                              maxAttempts: boundary.maxAttempts,
+                              nextDelayMs: boundary.nextDelayMs,
+                              errors: boundary.errors,
+                              traceId,
+                              spanId: span.spanId,
+                            },
+                          },
+                        ],
+                      });
+                    },
                   });
                 } catch (error) {
                   if (error instanceof StepRetryExhaustedError) {
@@ -194,21 +269,26 @@ export class WorkflowRuntime {
                 });
                 results.push(result);
 
-                await this.snapshot({
-                  id: createId('snap'),
-                  executionId,
-                  workflowId: request.workflow.id,
-                  sequence: index,
-                  state: structuredClone(state),
-                  executionContext,
+                await captureSnapshot({
+                  phase: 'step.completed',
+                  state,
                   sideEffects: [
                     {
                       type: step.kind,
                       key: step.id,
-                      response: result.output,
+                      response: {
+                        phase: 'step.completed',
+                        stepId: step.id,
+                        stepName: step.name,
+                        stepKind: step.kind,
+                        attempt: result.attempts,
+                        retry: result.retry,
+                        output: result.output,
+                        traceId,
+                        spanId: span.spanId,
+                      },
                     },
                   ],
-                  createdAt: new Date().toISOString(),
                 });
 
                 await this.finishSpan(span, result);
@@ -229,6 +309,23 @@ export class WorkflowRuntime {
           workflowSpan.setAttributes({
             'pulsestack.workflow.total_cost_usd': failureOutput.totalCostUsd,
             'pulsestack.workflow.total_tokens': failureOutput.totalTokens,
+          });
+          await captureSnapshot({
+            phase: 'workflow.completion',
+            state,
+            sideEffects: [
+              {
+                type: 'workflow.completion',
+                key: '__workflow',
+                response: {
+                  phase: 'workflow.completion',
+                  status: 'failed',
+                  error: message,
+                  traceId,
+                  spanId: workflowSpanId,
+                },
+              },
+            ],
           });
           await this.infra.completeExecution(executionId, 'failed', failureOutput);
           await publishEvent(
@@ -259,6 +356,22 @@ export class WorkflowRuntime {
         workflowSpan.setAttributes({
           'pulsestack.workflow.total_cost_usd': output.totalCostUsd,
           'pulsestack.workflow.total_tokens': output.totalTokens,
+        });
+        await captureSnapshot({
+          phase: 'workflow.completion',
+          state,
+          sideEffects: [
+            {
+              type: 'workflow.completion',
+              key: '__workflow',
+              response: {
+                phase: 'workflow.completion',
+                status: 'completed',
+                traceId,
+                spanId: workflowSpanId,
+              },
+            },
+          ],
         });
         await this.infra.completeExecution(executionId, 'completed', output);
         await publishEvent(
@@ -291,6 +404,12 @@ export class WorkflowRuntime {
     correlationId: string;
     executionContext: ExecutionContext;
     spanId: string;
+    onRetryBoundary?: (boundary: {
+      attempt: number;
+      maxAttempts: number;
+      nextDelayMs: number;
+      errors: string[];
+    }) => Promise<void>;
   }): Promise<StepResult> {
     const policy = normalizeRetryPolicy(args.step.retry);
     const errors: string[] = [];
@@ -348,6 +467,14 @@ export class WorkflowRuntime {
             },
           }),
         );
+        if (canRetry) {
+          await args.onRetryBoundary?.({
+            attempt,
+            maxAttempts: policy.maxAttempts,
+            nextDelayMs,
+            errors: [...errors],
+          });
+        }
         if (!canRetry) {
           throw new StepRetryExhaustedError(
             args.step.id,

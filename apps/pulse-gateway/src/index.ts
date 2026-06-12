@@ -78,7 +78,8 @@ function requiredPermission(method: string, url: string): Permission | null {
   if (url.startsWith('/api/traces')) return 'trace:read';
   if (url.startsWith('/api/graph')) return 'graph:read';
   if (url.startsWith('/api/metrics')) return 'metric:read';
-  if (url.startsWith('/api/replay')) return 'replay:write';
+  if (url.startsWith('/api/replay') && method === 'POST') return 'replay:write';
+  if (url.startsWith('/api/replay')) return 'trace:read';
   return null;
 }
 
@@ -144,6 +145,34 @@ app.get('/api/metrics/summary', async (request) =>
 app.post('/api/replay/:executionId', async (request) =>
   proxyJson(`${services.replay}/executions/${(request.params as { executionId: string }).executionId}/replay`, {
     method: 'POST',
+    headers: request.headers,
+  }),
+);
+app.get('/api/replay/:executionId/snapshots', async (request) =>
+  proxyJson(`${services.replay}/executions/${(request.params as { executionId: string }).executionId}/snapshots`, {
+    headers: request.headers,
+  }),
+);
+app.get('/api/replay/:executionId/snapshots/:sequence', async (request) => {
+  const params = request.params as { executionId: string; sequence: string };
+  return proxyJson(`${services.replay}/executions/${params.executionId}/snapshots/${params.sequence}`, {
+    headers: request.headers,
+  });
+});
+app.get('/api/replay/:executionId/snapshots/:sequence/state', async (request) => {
+  const params = request.params as { executionId: string; sequence: string };
+  return proxyJson(`${services.replay}/executions/${params.executionId}/snapshots/${params.sequence}/state`, {
+    headers: request.headers,
+  });
+});
+app.get('/api/replay/:executionId/snapshots/:sequence/diff', async (request) => {
+  const params = request.params as { executionId: string; sequence: string };
+  return proxyJson(`${services.replay}/executions/${params.executionId}/snapshots/${params.sequence}/diff`, {
+    headers: request.headers,
+  });
+});
+app.get('/api/traces/:executionId/snapshots', async (request) =>
+  proxyJson(`${services.trace}/executions/${(request.params as { executionId: string }).executionId}/snapshots`, {
     headers: request.headers,
   }),
 );

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   eventEnvelopeSchema,
   executionContextSchema,
+  snapshotInspectionSchema,
   workflowStepSchema,
 } from './index.js';
 
@@ -75,5 +76,44 @@ describe('contracts', () => {
         retry: { maxAttempts: 0 },
       }),
     ).toThrow();
+  });
+
+  it('validates snapshot inspection responses', () => {
+    expect(() =>
+      snapshotInspectionSchema.parse({
+        sequence: 1,
+        timestamp: new Date().toISOString(),
+        phase: 'retry.boundary',
+        stepId: 'fetch_logs',
+        stepKind: 'tool',
+        retry: {
+          boundary: true,
+          attempt: 1,
+          maxAttempts: 3,
+          errors: ['temporary failure'],
+        },
+        traceId: 'trace_1',
+        snapshot: {
+          id: 'snap_1',
+          executionId: 'exec_1',
+          workflowId: 'wf_1',
+          sequence: 1,
+          state: { __retry: { fetch_logs: { maxAttempts: 3 } } },
+          sideEffects: [
+            {
+              type: 'retry.boundary',
+              key: 'fetch_logs',
+              response: {},
+            },
+          ],
+          createdAt: new Date().toISOString(),
+        },
+        diff: {
+          added: [{ path: '__retry.fetch_logs' }],
+          modified: [],
+          removed: [],
+        },
+      }),
+    ).not.toThrow();
   });
 });
