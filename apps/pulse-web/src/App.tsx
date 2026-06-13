@@ -12,7 +12,7 @@ import {
   type SnapshotTimelineItem,
 } from './components/SnapshotDebugger';
 import { useWorkflowReplay, type WorkflowEvent } from './hooks/useWorkflowReplay';
-import { fetchJson } from './lib/api';
+import { fetchJson, postJson } from './lib/api';
 import { useUiStore } from './store/ui';
 
 type ExecutionContext = {
@@ -46,6 +46,36 @@ type TraceSpan = {
   attributes?: Record<string, unknown>;
   executionContext?: ExecutionContext;
 };
+type UsageMetadata = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  inputCost?: number;
+  outputCost?: number;
+  totalCost?: number;
+  attribution?: {
+    model?: string;
+  };
+};
+type UsageResponse = {
+  executionId?: string;
+  workflowId?: string;
+  tenantId?: string;
+  usage: UsageMetadata;
+  topWorkflows?: Array<{ id: string; executions: number; usage: UsageMetadata }>;
+  topModels?: Array<{ id: string; executions: number; usage: UsageMetadata }>;
+};
+type ReplayResponse = {
+  replaySessionId: string;
+  originalUsage?: UsageMetadata;
+  replayUsage?: UsageMetadata;
+  usageComparison?: {
+    inputTokensDelta: number;
+    outputTokensDelta: number;
+    totalTokensDelta: number;
+    totalCostDelta: number;
+  };
+};
 type MetricsSummary = {
   events: Array<{ type: string; total: number }>;
   latency: Array<{ kind: string; avg_latency_ms: number }>;
@@ -57,6 +87,7 @@ type MetricsSummary = {
     byStatus: Array<{ status: string; total: number }>;
     recent: Execution[];
   };
+  usage?: UsageResponse;
 };
 
 type DashboardStateProps = {
@@ -82,6 +113,8 @@ export default function App() {
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const [activeTab, setActiveTab] = useState<'monitor' | 'replay'>('monitor');
   const [selectedSnapshotSequence, setSelectedSnapshotSequence] = useState<number | null>(null);
+  const [replayRun, setReplayRun] = useState<ReplayResponse | null>(null);
+  const [isStartingReplay, setIsStartingReplay] = useState(false);
 
   const replayState = useWorkflowReplay(MOCK_EVENTS);
 
@@ -124,6 +157,14 @@ export default function App() {
   const snapshotTimeline = useQuery({
     queryKey: ['replay-snapshots', selectedExecutionId],
     queryFn: () => fetchJson<SnapshotTimelineItem[]>(`/api/replay/${selectedExecutionId}/snapshots`),
+    enabled: Boolean(selectedExecutionId),
+    retry: 1,
+    retryDelay: 1000,
+  });
+
+  const executionUsage = useQuery({
+    queryKey: ['execution-usage', selectedExecutionId],
+    queryFn: () => fetchJson<UsageResponse>(`/api/runtime/executions/${selectedExecutionId}/usage`),
     enabled: Boolean(selectedExecutionId),
     retry: 1,
     retryDelay: 1000,
@@ -223,6 +264,17 @@ export default function App() {
             metrics.data.latency.length,
         )
       : 0;
+  const totalUsage = metrics.data?.usage?.usage;
+
+  async function startReplay() {
+    if (!selectedExecutionId) return;
+    setIsStartingReplay(true);
+    try {
+      setReplayRun(await postJson<ReplayResponse>(`/api/replay/${selectedExecutionId}`));
+    } finally {
+      setIsStartingReplay(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(86,219,255,0.15),_transparent_40%),linear-gradient(180deg,#040814,#09111f_45%,#02050b)] px-4 py-6 text-white">
@@ -295,6 +347,20 @@ export default function App() {
                 {`${averageLatency}ms`}
               </StatValue>
               <div className="text-xs uppercase text-white/50">trace spans</div>
+            </Panel>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Panel title="Total Tokens">
+              <StatValue isLoading={metrics.isLoading} isError={metrics.isError} className="text-cyan">
+                {formatNumber(totalUsage?.totalTokens)}
+              </StatValue>
+              <div className="text-xs uppercase text-white/50">estimated usage</div>
+            </Panel>
+            <Panel title="Estimated Cost">
+              <StatValue isLoading={metrics.isLoading} isError={metrics.isError} className="text-mint">
+                {formatCost(totalUsage?.totalCost)}
+              </StatValue>
+              <div className="text-xs uppercase text-white/50">configured pricing</div>
             </Panel>
           </div>
 
@@ -405,6 +471,34 @@ export default function App() {
 
                 <WorkflowGraph events={MOCK_EVENTS} currentIndex={replayState.currentStepIndex} />
                 <ReplayScrubber events={MOCK_EVENTS} replayState={replayState} />
+                <Panel title="Replay Usage">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="font-mono text-xs text-white/50">
+                      {replayRun?.replaySessionId ? `session ${shortId(replayRun.replaySessionId)}` : 'no replay session'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void startReplay()}
+                      disabled={!selectedExecutionId || isStartingReplay}
+                      className="rounded-lg border border-cyan/30 bg-cyan/10 px-3 py-1.5 text-xs font-semibold text-cyan transition hover:bg-cyan/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isStartingReplay ? 'Starting...' : 'Run Replay'}
+                    </button>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <UsageCard title="Original" usage={replayRun?.originalUsage ?? executionUsage.data?.usage} />
+                    <UsageCard title="Replay" usage={replayRun?.replayUsage} />
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                      <div className="text-xs font-bold uppercase tracking-wider text-white/50">Replay Delta</div>
+                      <div className="mt-3 font-mono text-2xl text-white">
+                        {formatNumber(replayRun?.usageComparison?.totalTokensDelta)}
+                      </div>
+                      <div className="text-xs uppercase text-white/50">
+                        {formatCost(replayRun?.usageComparison?.totalCostDelta)}
+                      </div>
+                    </div>
+                  </div>
+                </Panel>
                 <SnapshotDebugger
                   timeline={snapshotTimeline.data}
                   inspection={selectedSnapshot.data}
@@ -484,6 +578,12 @@ export default function App() {
               </div>
             )}
           </Panel>
+          <Panel title="Top Usage">
+            <UsageList title="Workflows" rows={metrics.data?.usage?.topWorkflows} />
+            <div className="mt-4">
+              <UsageList title="Models" rows={metrics.data?.usage?.topModels} />
+            </div>
+          </Panel>
         </div>
       </div>
     </main>
@@ -493,6 +593,14 @@ export default function App() {
 function shortId(value: string | undefined) {
   if (!value) return 'n/a';
   return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+}
+
+function formatNumber(value: number | undefined) {
+  return Intl.NumberFormat('en-US').format(value ?? 0);
+}
+
+function formatCost(value: number | undefined) {
+  return `$${(value ?? 0).toFixed(4)}`;
 }
 
 function getErrorMessage(error: unknown) {
@@ -563,4 +671,41 @@ function StatValue({ children, className, isLoading, isError }: { children: Reac
 
 function InlineSkeleton({ width }: { width: string }) {
   return <span className={`inline-block h-6 ${width} animate-pulse rounded bg-white/10 align-middle`} />;
+}
+
+function UsageCard({ title, usage }: { title: string; usage?: UsageMetadata }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="text-xs font-bold uppercase tracking-wider text-white/50">{title}</div>
+      <div className="mt-3 font-mono text-2xl text-cyan">{formatNumber(usage?.totalTokens)}</div>
+      <div className="text-xs uppercase text-white/50">{formatCost(usage?.totalCost)}</div>
+    </div>
+  );
+}
+
+function UsageList({ title, rows }: { title: string; rows?: Array<{ id: string; executions: number; usage: UsageMetadata }> }) {
+  return (
+    <div>
+      <div className="mb-2 text-xs font-bold uppercase tracking-wider text-white/50">{title}</div>
+      {rows && rows.length > 0 ? (
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <div key={`${title}-${row.id}`} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate text-white/70">{row.id}</span>
+                <span className="font-mono text-cyan">{formatNumber(row.usage.totalTokens)}</span>
+              </div>
+              <div className="mt-1 text-[10px] uppercase text-white/40">
+                {row.executions} runs · {formatCost(row.usage.totalCost)}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/40">
+          No usage recorded.
+        </div>
+      )}
+    </div>
+  );
 }

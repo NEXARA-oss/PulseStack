@@ -4,6 +4,7 @@ import type {
   ExecutionSnapshot,
   RetryPolicy,
   TraceSpan,
+  UsageMetadata,
   WorkflowStep,
 } from '@pulsestack/contracts';
 import {
@@ -15,6 +16,7 @@ import { createEvent, publishEvent } from './events.js';
 import { createId } from './ids.js';
 import type { PulseInfra } from './infra.js';
 import { activeTraceId, spanId, withRuntimeSpan } from './tracing.js';
+import { aggregateUsage, buildUsageMetadata, estimatePromptTokens } from './usage.js';
 import { validateWorkflowDag } from './workflow-validation.js';
 
 const defaultRetryPolicy: RetryPolicy = {
@@ -29,6 +31,7 @@ type StepResult = {
   output: Record<string, unknown>;
   costUsd: number;
   tokens: number;
+  usage: UsageMetadata;
   attempts: number;
   retry: {
     maxAttempts: number;
@@ -192,7 +195,6 @@ export class WorkflowRuntime {
                   executionId,
                   workflowId: request.workflow.id,
                   tenantId: request.workflow.tenantId,
-                  correlationId: request.workflow.correlationId, 
                   correlationId: request.workflow.correlationId,
                   executionContext,
                   parentSpanId: workflowSpanId,
@@ -261,6 +263,10 @@ export class WorkflowRuntime {
                 otelStepSpan.setAttributes({
                   'pulsestack.step.cost_usd': result.costUsd,
                   'pulsestack.step.tokens': result.tokens,
+                  'pulsestack.step.input_tokens': result.usage.inputTokens ?? 0,
+                  'pulsestack.step.output_tokens': result.usage.outputTokens ?? 0,
+                  'pulsestack.step.total_tokens': result.usage.totalTokens ?? 0,
+                  'pulsestack.step.total_cost': result.usage.totalCost ?? 0,
                   'pulsestack.step.attempts': result.attempts,
                   'pulsestack.step.retry.exhausted': result.retry.exhausted,
                 });
@@ -285,6 +291,7 @@ export class WorkflowRuntime {
                         attempt: result.attempts,
                         retry: result.retry,
                         output: result.output,
+                        usage: result.usage,
                         traceId,
                         spanId: span.spanId,
                       },
@@ -298,10 +305,16 @@ export class WorkflowRuntime {
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Workflow failed';
+          const usage = aggregateUsage(results.map((item) => item.usage), {
+            tenantId: request.workflow.tenantId,
+            workflowId: request.workflow.id,
+            executionId,
+          });
           const failureOutput = {
             steps: results,
             totalCostUsd: results.reduce((sum, item) => sum + item.costUsd, 0),
             totalTokens: results.reduce((sum, item) => sum + item.tokens, 0),
+            usage,
             finalState: state,
             error: message,
             executionContext,
@@ -310,6 +323,9 @@ export class WorkflowRuntime {
           workflowSpan.setAttributes({
             'pulsestack.workflow.total_cost_usd': failureOutput.totalCostUsd,
             'pulsestack.workflow.total_tokens': failureOutput.totalTokens,
+            'pulsestack.workflow.input_tokens': usage.inputTokens ?? 0,
+            'pulsestack.workflow.output_tokens': usage.outputTokens ?? 0,
+            'pulsestack.workflow.total_cost': usage.totalCost ?? 0,
           });
           await captureSnapshot({
             phase: 'workflow.completion',
@@ -322,6 +338,7 @@ export class WorkflowRuntime {
                   phase: 'workflow.completion',
                   status: 'failed',
                   error: message,
+                  usage,
                   traceId,
                   spanId: workflowSpanId,
                 },
@@ -346,10 +363,16 @@ export class WorkflowRuntime {
           throw error;
         }
 
+        const usage = aggregateUsage(results.map((item) => item.usage), {
+          tenantId: request.workflow.tenantId,
+          workflowId: request.workflow.id,
+          executionId,
+        });
         const output = {
           steps: results,
           totalCostUsd: results.reduce((sum, item) => sum + item.costUsd, 0),
           totalTokens: results.reduce((sum, item) => sum + item.tokens, 0),
+          usage,
           finalState: state,
           executionContext,
         };
@@ -357,6 +380,9 @@ export class WorkflowRuntime {
         workflowSpan.setAttributes({
           'pulsestack.workflow.total_cost_usd': output.totalCostUsd,
           'pulsestack.workflow.total_tokens': output.totalTokens,
+          'pulsestack.workflow.input_tokens': usage.inputTokens ?? 0,
+          'pulsestack.workflow.output_tokens': usage.outputTokens ?? 0,
+          'pulsestack.workflow.total_cost': usage.totalCost ?? 0,
         });
         await captureSnapshot({
           phase: 'workflow.completion',
@@ -368,6 +394,7 @@ export class WorkflowRuntime {
               response: {
                 phase: 'workflow.completion',
                 status: 'completed',
+                usage,
                 traceId,
                 spanId: workflowSpanId,
               },
@@ -579,14 +606,39 @@ export class WorkflowRuntime {
             ...base,
             status: 'processed',
           };
-    const tokens =
-      step.kind === 'llm' && 'tokens' in output ? Number(output.tokens) : 0;
+    const model = String(step.input.model ?? (step.kind === 'llm' ? 'generic-llm' : 'generic'));
+    const inputTokens =
+      step.kind === 'llm'
+        ? Number(step.input.inputTokens ?? estimatePromptTokens(step.input.prompt))
+        : 0;
+    const outputTokens =
+      step.kind === 'llm' && 'tokens' in output
+        ? Number(step.input.outputTokens ?? output.tokens)
+        : 0;
+    const usage = buildUsageMetadata({
+      model,
+      tokenUsage: {
+        inputTokens,
+        outputTokens,
+      },
+      attribution: {
+        tenantId,
+        workflowId: executionContext.workflowId,
+        executionId: executionContext.executionId,
+        stepId: step.id,
+        retryAttempt: attempt,
+        ...(executionContext.replaySessionId
+          ? { replaySessionId: executionContext.replaySessionId }
+          : {}),
+      },
+    });
 
     return {
       stepId: step.id,
       output,
-      costUsd: step.kind === 'llm' ? 0.014 : 0.002,
-      tokens,
+      costUsd: usage.totalCost ?? 0,
+      tokens: usage.totalTokens ?? 0,
+      usage,
     };
   }
 
@@ -657,6 +709,11 @@ export class WorkflowRuntime {
         stepId: result.stepId,
         costUsd: result.costUsd,
         tokens: result.tokens,
+        usage: result.usage,
+        inputTokens: result.usage.inputTokens ?? 0,
+        outputTokens: result.usage.outputTokens ?? 0,
+        totalTokens: result.usage.totalTokens ?? 0,
+        totalCost: result.usage.totalCost ?? 0,
         attempts: result.attempts,
         retryExhausted: result.retry.exhausted,
         retryAttempt: result.attempts,

@@ -11,3 +11,4 @@ export * from './lib/plugins.js';
 export * from './lib/rbac.js';
 export * from './lib/server.js';
 export * from './lib/tracing.js';
+export * from './lib/usage.js';

@@ -6,7 +6,9 @@ import type {
   ExecutionContext,
   ExecutionSnapshot,
   SnapshotInspection,
+  UsageMetadata,
 } from '@pulsestack/contracts';
+import { aggregateUsage } from './usage.js';
 
 export class ReplayEngine {
   constructor(private readonly infra: PulseInfra, private readonly source = 'pulse-replay') {}
@@ -32,6 +34,18 @@ export class ReplayEngine {
       traceId: originalContext?.traceId ?? createId('trace'),
       replaySessionId: replayId,
     };
+    const originalUsage = usageFromExecutionOutput(execution.output, {
+      tenantId: executionTenantId,
+      workflowId: execution.workflow_id,
+      executionId,
+    });
+    const replayUsage = aggregateUsage([], {
+      tenantId: executionTenantId,
+      workflowId: execution.workflow_id,
+      executionId,
+      replaySessionId: replayId,
+    });
+    const usageComparison = compareUsage(originalUsage, replayUsage);
 
     await publishEvent(
       this.infra,
@@ -48,6 +62,9 @@ export class ReplayEngine {
           replaySessionId: replayId,
           originalExecutionId: executionId,
           snapshotCount: snapshots.length,
+          originalUsage,
+          replayUsage,
+          usageComparison,
         },
       }),
     );
@@ -76,6 +93,9 @@ export class ReplayEngine {
           originalExecutionId: executionId,
           diff,
           replayState,
+          originalUsage,
+          replayUsage,
+          usageComparison,
         },
       }),
     );
@@ -88,12 +108,16 @@ export class ReplayEngine {
       snapshots,
       replayState,
       diff,
+      originalUsage,
+      replayUsage,
+      usageComparison,
       timeline: buildSnapshotInspections(snapshots).map((inspection) => ({
         sequence: inspection.sequence,
         timestamp: inspection.timestamp,
         phase: inspection.phase,
         stepId: inspection.stepId,
         retry: inspection.retry,
+        usage: inspection.usage,
         traceId: inspection.traceId,
         sideEffects: inspection.snapshot.sideEffects,
       })),
@@ -116,6 +140,7 @@ export class ReplayEngine {
       stepId: inspection.stepId,
       stepKind: inspection.stepKind,
       retry: inspection.retry,
+      usage: inspection.usage,
       traceId: inspection.traceId,
       spanId: inspection.spanId,
       stateKeys: Object.keys(inspection.snapshot.state).sort(),
@@ -189,6 +214,7 @@ export function buildSnapshotInspections(
       stepId: metadata.stepId,
       stepKind: metadata.stepKind,
       retry: metadata.retry,
+      usage: metadata.usage,
       traceId: metadata.traceId ?? snapshot.executionContext?.traceId,
       spanId: metadata.spanId,
       snapshot,
@@ -279,7 +305,45 @@ function snapshotMetadata(snapshot: ExecutionSnapshot) {
           ? effect.type
           : undefined,
     retry,
+    usage:
+      response.usage && typeof response.usage === 'object'
+        ? (response.usage as UsageMetadata)
+        : undefined,
     traceId: typeof response.traceId === 'string' ? response.traceId : undefined,
     spanId: typeof response.spanId === 'string' ? response.spanId : undefined,
+  };
+}
+
+function usageFromExecutionOutput(
+  output: Record<string, unknown> | undefined,
+  attribution: UsageMetadata['attribution'],
+): UsageMetadata {
+  const usage = output?.usage;
+  if (usage && typeof usage === 'object' && !Array.isArray(usage)) {
+    return {
+      ...(usage as UsageMetadata),
+      attribution: {
+        ...attribution,
+        ...(usage as UsageMetadata).attribution,
+      },
+    };
+  }
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: Number(output?.totalTokens ?? 0),
+    inputCost: 0,
+    outputCost: 0,
+    totalCost: Number(output?.totalCostUsd ?? 0),
+    attribution,
+  };
+}
+
+function compareUsage(original: UsageMetadata, replay: UsageMetadata) {
+  return {
+    inputTokensDelta: Number(replay.inputTokens ?? 0) - Number(original.inputTokens ?? 0),
+    outputTokensDelta: Number(replay.outputTokens ?? 0) - Number(original.outputTokens ?? 0),
+    totalTokensDelta: Number(replay.totalTokens ?? 0) - Number(original.totalTokens ?? 0),
+    totalCostDelta: Number((Number(replay.totalCost ?? 0) - Number(original.totalCost ?? 0)).toFixed(8)),
   };
 }

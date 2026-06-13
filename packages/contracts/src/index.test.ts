@@ -3,6 +3,7 @@ import {
   eventEnvelopeSchema,
   executionContextSchema,
   snapshotInspectionSchema,
+  usageMetadataSchema,
   workflowStepSchema,
 } from './index.js';
 
@@ -34,6 +35,28 @@ describe('contracts', () => {
         parentSpanId: 'span_0',
         retryAttempt: 2,
         replaySessionId: 'replay_1',
+      }),
+    ).not.toThrow();
+  });
+
+  it('validates optional usage metadata', () => {
+    expect(() =>
+      usageMetadataSchema.parse({
+        inputTokens: 12,
+        outputTokens: 34,
+        totalTokens: 46,
+        inputCost: 0.000012,
+        outputCost: 0.000068,
+        totalCost: 0.00008,
+        attribution: {
+          tenantId: 'tenant',
+          workflowId: 'wf_1',
+          executionId: 'exec_1',
+          stepId: 'llm',
+          retryAttempt: 1,
+          replaySessionId: 'replay_1',
+          model: 'generic-llm',
+        },
       }),
     ).not.toThrow();
   });

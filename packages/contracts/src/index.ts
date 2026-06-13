@@ -60,6 +60,34 @@ export const executionContextSchema = z.object({
   replaySessionId: z.string().optional(),
 });
 
+export const tokenUsageSchema = z.object({
+  inputTokens: z.number().int().nonnegative().optional(),
+  outputTokens: z.number().int().nonnegative().optional(),
+  totalTokens: z.number().int().nonnegative().optional(),
+});
+
+export const costEstimateSchema = z.object({
+  inputCost: z.number().nonnegative().optional(),
+  outputCost: z.number().nonnegative().optional(),
+  totalCost: z.number().nonnegative().optional(),
+});
+
+export const usageAttributionSchema = z.object({
+  tenantId: tenantIdSchema.optional(),
+  workflowId: z.string().optional(),
+  executionId: z.string().optional(),
+  stepId: z.string().optional(),
+  retryAttempt: z.number().int().min(1).optional(),
+  replaySessionId: z.string().optional(),
+  model: z.string().optional(),
+});
+
+export const usageMetadataSchema = z.object({
+  ...tokenUsageSchema.shape,
+  ...costEstimateSchema.shape,
+  attribution: usageAttributionSchema.optional(),
+});
+
 export const eventEnvelopeSchema = z.object({
   id: z.string(),
   version: z.literal(1),
@@ -91,6 +119,7 @@ export const traceSpanSchema = z.object({
   startedAt: z.string(),
   endedAt: z.string().nullable(),
   attributes: z.record(z.string(), z.unknown()).default({}),
+  usage: usageMetadataSchema.optional(),
   executionContext: executionContextSchema.optional(),
   error: z.string().nullable(),
 });
@@ -139,6 +168,7 @@ export const snapshotInspectionSchema = z.object({
       errors: z.array(z.string()).optional(),
     })
     .optional(),
+  usage: usageMetadataSchema.optional(),
   traceId: z.string().optional(),
   spanId: z.string().optional(),
   snapshot: executionSnapshotSchema,
@@ -173,6 +203,10 @@ export type RetryPolicy = z.infer<typeof retryPolicySchema>;
 export type WorkflowStep = z.infer<typeof workflowStepSchema>;
 export type WorkflowDefinition = z.infer<typeof workflowDefinitionSchema>;
 export type ExecutionContext = z.infer<typeof executionContextSchema>;
+export type TokenUsage = z.infer<typeof tokenUsageSchema>;
+export type CostEstimate = z.infer<typeof costEstimateSchema>;
+export type UsageAttribution = z.infer<typeof usageAttributionSchema>;
+export type UsageMetadata = z.infer<typeof usageMetadataSchema>;
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
 export type TraceSpan = z.infer<typeof traceSpanSchema>;
 export type ExecutionSnapshot = z.infer<typeof executionSnapshotSchema>;
