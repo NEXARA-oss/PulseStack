@@ -11,6 +11,7 @@ type SnapshotTimelineItem = {
     exhausted?: boolean;
     errors?: string[];
   };
+  usage?: UsageMetadata;
   traceId?: string;
   spanId?: string;
   stateKeys: string[];
@@ -19,6 +20,13 @@ type SnapshotTimelineItem = {
     modified: number;
     removed: number;
   };
+};
+
+type UsageMetadata = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  totalCost?: number;
 };
 
 type SnapshotDiffEntry = {
@@ -34,6 +42,7 @@ type SnapshotInspection = {
   stepId?: string;
   stepKind?: string;
   retry?: SnapshotTimelineItem['retry'];
+  usage?: UsageMetadata;
   traceId?: string;
   spanId?: string;
   snapshot: {
@@ -143,6 +152,11 @@ export function SnapshotDebugger({
                   Retry attempt {item.retry.attempt ?? '?'} of {item.retry.maxAttempts ?? '?'}
                 </div>
               ) : null}
+              {item.usage?.totalTokens ? (
+                <div className="mt-2 font-mono text-[10px] text-cyan">
+                  {formatNumber(item.usage.totalTokens)} tokens · {formatCost(item.usage.totalCost)}
+                </div>
+              ) : null}
             </button>
           ))}
         </div>
@@ -161,7 +175,9 @@ export function SnapshotDebugger({
         <PanelHeading
           title="Diff Viewer"
           detail={
-            inspection?.retry?.boundary
+            inspection?.usage?.totalTokens
+              ? `${formatNumber(inspection.usage.totalTokens)} tokens`
+              : inspection?.retry?.boundary
               ? `retry ${inspection.retry.attempt ?? '?'}`
               : inspection?.traceId
                 ? `trace ${shortId(inspection.traceId)}`
@@ -262,6 +278,14 @@ function DebuggerSkeleton({ compact = false }: { compact?: boolean }) {
 
 function formatJson(value: unknown) {
   return JSON.stringify(value, null, 2);
+}
+
+function formatNumber(value: number | undefined) {
+  return Intl.NumberFormat('en-US').format(value ?? 0);
+}
+
+function formatCost(value: number | undefined) {
+  return `$${(value ?? 0).toFixed(4)}`;
 }
 
 function errorMessage(error: unknown) {

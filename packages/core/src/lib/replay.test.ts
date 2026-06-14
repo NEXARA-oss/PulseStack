@@ -22,7 +22,11 @@ describe('ReplayEngine lineage', () => {
         correlation_id: 'corr_replay',
         status: 'completed',
         input: {},
-        output: { executionContext, result: 'ok' },
+        output: {
+          executionContext,
+          result: 'ok',
+          usage: { inputTokens: 5, outputTokens: 10, totalTokens: 15, totalCost: 0.001 },
+        },
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }),
@@ -44,6 +48,9 @@ describe('ReplayEngine lineage', () => {
       'replay.started',
       'replay.completed',
     ]);
+    expect(result.originalUsage).toMatchObject({ totalTokens: 15 });
+    expect(result.replayUsage).toMatchObject({ totalTokens: 0 });
+    expect(result.usageComparison).toMatchObject({ totalTokensDelta: -15 });
     expect(
       events.every(
         (event) =>

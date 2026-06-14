@@ -80,6 +80,19 @@ app.get('/executions/:executionId', async (request, reply) => {
   return execution;
 });
 
+app.get('/executions/:executionId/usage', async (request, reply) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const usage = await infra.getExecutionUsage(
+    (request.params as { executionId: string }).executionId,
+    tenantId,
+  );
+  if (!usage) return reply.code(404).send({ message: 'Execution not found' });
+  return usage;
+});
+
 app.get('/executions', async (request) => {
   const tenantId = tenantIdFromHeaders(
     request.headers as Record<string, string | string[] | undefined>,
@@ -89,6 +102,26 @@ app.get('/executions', async (request) => {
   const limit = query.limit ? parseInt(query.limit, 10) : 25;
   const offset = query.offset ? parseInt(query.offset, 10) : 0;
   return infra.listExecutions(limit, offset, tenantId);
+});
+
+app.get('/workflows/:workflowId/usage', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  return infra.getWorkflowUsage((request.params as { workflowId: string }).workflowId, tenantId);
+});
+
+app.get('/tenants/:tenantId/usage', async (request, reply) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const requestedTenantId = (request.params as { tenantId: string }).tenantId;
+  if (requestedTenantId !== tenantId) {
+    return reply.code(403).send({ message: 'Request tenant does not match route tenant' });
+  }
+  return infra.getTenantUsage(tenantId);
 });
 
 const protoPath = path.resolve(process.cwd(), 'proto/pulsestack.proto');

@@ -74,6 +74,8 @@ function requiredPermission(method: string, url: string): Permission | null {
   if (!url.startsWith('/api')) return null;
   if (url.startsWith('/api/runtime/executions') && method === 'POST') return 'execution:write';
   if (url.startsWith('/api/runtime/executions')) return 'execution:read';
+  if (url.startsWith('/api/runtime/workflows')) return 'execution:read';
+  if (url.startsWith('/api/runtime/tenants')) return 'execution:read';
   if (url.startsWith('/api/events')) return 'event:read';
   if (url.startsWith('/api/traces')) return 'trace:read';
   if (url.startsWith('/api/graph')) return 'graph:read';
@@ -123,6 +125,21 @@ app.get('/api/runtime/executions', async (request) => {
 });
 app.get('/api/runtime/executions/:executionId', async (request) =>
   proxyJson(`${services.runtime}/executions/${(request.params as { executionId: string }).executionId}`, {
+    headers: request.headers,
+  }),
+);
+app.get('/api/runtime/executions/:executionId/usage', async (request) =>
+  proxyJson(`${services.runtime}/executions/${(request.params as { executionId: string }).executionId}/usage`, {
+    headers: request.headers,
+  }),
+);
+app.get('/api/runtime/workflows/:workflowId/usage', async (request) =>
+  proxyJson(`${services.runtime}/workflows/${(request.params as { workflowId: string }).workflowId}/usage`, {
+    headers: request.headers,
+  }),
+);
+app.get('/api/runtime/tenants/:tenantId/usage', async (request) =>
+  proxyJson(`${services.runtime}/tenants/${(request.params as { tenantId: string }).tenantId}/usage`, {
     headers: request.headers,
   }),
 );

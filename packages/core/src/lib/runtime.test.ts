@@ -146,6 +146,10 @@ describe('WorkflowRuntime retry handling', () => {
     expect(result.output.steps[0]).toMatchObject({
       stepId: 'fetch_logs',
       attempts: 2,
+      usage: {
+        totalTokens: 0,
+        totalCost: 0,
+      },
       retry: {
         maxAttempts: 3,
         exhausted: false,
@@ -192,6 +196,63 @@ describe('WorkflowRuntime retry handling', () => {
     expect(harness.completions.at(-1)?.output.executionContext).toMatchObject({
       executionId: result.executionId,
       traceId: result.traceId,
+    });
+    expect(harness.completions.at(-1)?.output.usage).toMatchObject({
+      totalTokens: 0,
+      attribution: {
+        tenantId: baseRequest.workflow.tenantId,
+        workflowId: baseRequest.workflow.id,
+        executionId: result.executionId,
+      },
+    });
+  });
+
+  it('attributes llm token usage and estimated cost to the execution', async () => {
+    const harness = createRuntimeHarness();
+    const request = {
+      ...baseRequest,
+      workflow: {
+        ...baseRequest.workflow,
+        steps: [
+          {
+            id: 'summarize',
+            name: 'Summarize',
+            kind: 'llm' as const,
+            dependsOn: [],
+            input: {
+              model: 'generic-llm',
+              prompt: 'summarize the incident',
+              outputTokens: 50,
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await harness.runtime.execute(request);
+
+    expect(result.output.steps[0].usage).toMatchObject({
+      inputTokens: 6,
+      outputTokens: 50,
+      totalTokens: 56,
+      attribution: {
+        tenantId: request.workflow.tenantId,
+        workflowId: request.workflow.id,
+        executionId: result.executionId,
+        stepId: 'summarize',
+        retryAttempt: 1,
+        model: 'generic-llm',
+      },
+    });
+    expect(result.output.usage).toMatchObject({
+      inputTokens: 6,
+      outputTokens: 50,
+      totalTokens: 56,
+    });
+    expect(harness.spans.at(-1)?.attributes).toMatchObject({
+      inputTokens: 6,
+      outputTokens: 50,
+      totalTokens: 56,
     });
   });
 

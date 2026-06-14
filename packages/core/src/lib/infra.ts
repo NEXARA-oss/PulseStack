@@ -1,9 +1,10 @@
 import { createClient } from '@clickhouse/client';
-import type { EventEnvelope, ExecutionSnapshot, TraceSpan, WorkflowDefinition } from '@pulsestack/contracts';
+import type { EventEnvelope, ExecutionSnapshot, TraceSpan, UsageMetadata, WorkflowDefinition } from '@pulsestack/contracts';
 import { Redis } from 'ioredis';
 import { connect, type NatsConnection, StringCodec } from 'nats';
 import { Pool } from 'pg';
 import { loadEnv } from './config.js';
+import { aggregateUsage } from './usage.js';
 
 const codec = StringCodec();
 
@@ -95,6 +96,78 @@ export class PulseInfra {
     );
     const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
     return { rows: result.rows, total, limit: safeLimit, offset: safeOffset };
+  }
+
+  async getExecutionUsage(executionId: string, tenantId?: string) {
+    const execution = await this.getExecution(executionId, tenantId);
+    if (!execution) return null;
+    return {
+      executionId: execution.id,
+      workflowId: execution.workflow_id,
+      tenantId: execution.tenant_id,
+      usage: usageFromOutput(execution.output, {
+        executionId: execution.id,
+        workflowId: execution.workflow_id,
+        tenantId: execution.tenant_id,
+      }),
+    };
+  }
+
+  async getWorkflowUsage(workflowId: string, tenantId?: string) {
+    const result = await this.pg.query<ExecutionRecord>(
+      tenantId
+        ? 'select * from executions where workflow_id = $1 and tenant_id = $2'
+        : 'select * from executions where workflow_id = $1',
+      tenantId ? [workflowId, tenantId] : [workflowId],
+    );
+    const usage = aggregateUsage(
+      result.rows.map((row) =>
+        usageFromOutput(row.output, {
+          executionId: row.id,
+          workflowId: row.workflow_id,
+          tenantId: row.tenant_id,
+        }),
+      ),
+      {
+        workflowId,
+        ...(tenantId ? { tenantId } : {}),
+      },
+    );
+    return {
+      workflowId,
+      tenantId,
+      executionCount: result.rows.length,
+      usage,
+    };
+  }
+
+  async getTenantUsage(tenantId: string) {
+    const result = await this.pg.query<ExecutionRecord>(
+      'select * from executions where tenant_id = $1',
+      [tenantId],
+    );
+    const usage = aggregateUsage(
+      result.rows.map((row) =>
+        usageFromOutput(row.output, {
+          executionId: row.id,
+          workflowId: row.workflow_id,
+          tenantId: row.tenant_id,
+        }),
+      ),
+      { tenantId },
+    );
+    const byWorkflow = groupUsage(result.rows, (row) => row.workflow_id);
+    const byModel = groupUsage(result.rows, (row) => {
+      const model = modelFromOutput(row.output);
+      return model ?? 'unknown';
+    });
+    return {
+      tenantId,
+      executionCount: result.rows.length,
+      usage,
+      topWorkflows: byWorkflow,
+      topModels: byModel,
+    };
   }
 
   async writeSnapshot(snapshot: ExecutionSnapshot) {
@@ -245,14 +318,14 @@ export class PulseInfra {
              order by total desc`,
         tenantId ? [tenantId] : [],
       ),
-      this.pg.query<{ id: string; workflow_id: string; status: string; updated_at: string }>(
+      this.pg.query<ExecutionRecord>(
         tenantId
-          ? `select id, workflow_id, status, updated_at
+          ? `select *
              from executions
              where tenant_id = $1
              order by updated_at desc
              limit 10`
-          : `select id, workflow_id, status, updated_at
+          : `select *
              from executions
              order by updated_at desc
              limit 10`,
@@ -274,6 +347,9 @@ export class PulseInfra {
     return {
       events: await totals.json(),
       latency: await latency.json(),
+      usage: tenantId
+        ? await this.getTenantUsage(tenantId)
+        : usageSummaryFromExecutions(recentExecutions.rows),
       executions: {
         total: executionCount,
         succeeded: successfulExecutions,
@@ -291,6 +367,87 @@ export class PulseInfra {
     const nc = await this.nats().catch(() => null);
     nc?.close();
   }
+}
+
+function usageSummaryFromExecutions(rows: ExecutionRecord[]) {
+  const usage = aggregateUsage(
+    rows.map((row) =>
+      usageFromOutput(row.output, {
+        executionId: row.id,
+        workflowId: row.workflow_id,
+        tenantId: row.tenant_id,
+      }),
+    ),
+  );
+  return {
+    executionCount: rows.length,
+    usage,
+    topWorkflows: groupUsage(rows, (row) => row.workflow_id),
+    topModels: groupUsage(rows, (row) => modelFromOutput(row.output) ?? 'unknown'),
+  };
+}
+
+function groupUsage(rows: ExecutionRecord[], keyFor: (row: ExecutionRecord) => string) {
+  const grouped = new Map<string, { executions: number; items: UsageMetadata[] }>();
+  for (const row of rows) {
+    const key = keyFor(row);
+    const current = grouped.get(key) ?? { executions: 0, items: [] };
+    current.executions += 1;
+    current.items.push(
+      usageFromOutput(row.output, {
+        executionId: row.id,
+        workflowId: row.workflow_id,
+        tenantId: row.tenant_id,
+      }),
+    );
+    grouped.set(key, current);
+  }
+  return Array.from(grouped.entries())
+    .map(([id, value]) => ({
+      id,
+      executions: value.executions,
+      usage: aggregateUsage(value.items),
+    }))
+    .sort((a, b) => Number(b.usage.totalTokens ?? 0) - Number(a.usage.totalTokens ?? 0))
+    .slice(0, 5);
+}
+
+function usageFromOutput(
+  output: Record<string, unknown> | undefined,
+  attribution?: UsageMetadata['attribution'],
+): UsageMetadata {
+  const usage = output?.usage;
+  if (usage && typeof usage === 'object' && !Array.isArray(usage)) {
+    return {
+      ...(usage as UsageMetadata),
+      attribution: {
+        ...attribution,
+        ...(usage as UsageMetadata).attribution,
+      },
+    };
+  }
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: Number(output?.totalTokens ?? 0),
+    inputCost: 0,
+    outputCost: 0,
+    totalCost: Number(output?.totalCostUsd ?? 0),
+    ...(attribution ? { attribution } : {}),
+  };
+}
+
+function modelFromOutput(output: Record<string, unknown> | undefined) {
+  const steps = output?.steps;
+  if (!Array.isArray(steps)) return undefined;
+  const models = steps
+    .map((step) =>
+      step && typeof step === 'object'
+        ? ((step as { usage?: UsageMetadata }).usage?.attribution?.model)
+        : undefined,
+    )
+    .filter((model): model is string => typeof model === 'string' && model.length > 0);
+  return models[0];
 }
 
 function parseJsonRecord(value: unknown): Record<string, unknown> {
