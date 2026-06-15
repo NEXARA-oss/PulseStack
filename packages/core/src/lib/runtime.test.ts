@@ -303,3 +303,66 @@ describe('WorkflowRuntime retry handling', () => {
     });
   });
 });
+describe('WorkflowRuntime workflow.started event', () => {
+  it('fires workflow.started exactly once before any step executes', async () => {
+    const harness = createRuntimeHarness();
+
+    await harness.runtime.execute({
+      workflow: {
+        id: 'wf_started_test',
+        name: 'Started event test',
+        version: '1.0.0',
+        tenantId: 'tenant_test',
+        correlationId: 'corr_test',
+        metadata: {},
+        steps: [
+          { id: 'step1', name: 'Step 1', kind: 'trigger', dependsOn: [], input: {} },
+          { id: 'step2', name: 'Step 2', kind: 'tool',    dependsOn: ['step1'], input: {} },
+          { id: 'step3', name: 'Step 3', kind: 'llm',     dependsOn: ['step2'], input: {} },
+        ],
+      },
+      input: {},
+      initiatedBy: 'unit-test',
+    });
+
+    // workflow.started must fire exactly ONCE — not once per step
+    const startedEvents = harness.events.filter(
+      (event) => event.type === 'workflow.started',
+    );
+    expect(startedEvents).toHaveLength(1);
+  });
+
+  it('fires workflow.started before any step events', async () => {
+    const harness = createRuntimeHarness();
+
+    await harness.runtime.execute({
+      workflow: {
+        id: 'wf_order_test',
+        name: 'Event order test',
+        version: '1.0.0',
+        tenantId: 'tenant_test',
+        correlationId: 'corr_test',
+        metadata: {},
+        steps: [
+          { id: 'step1', name: 'Step 1', kind: 'tool', dependsOn: [], input: {} },
+          { id: 'step2', name: 'Step 2', kind: 'llm',  dependsOn: ['step1'], input: {} },
+        ],
+      },
+      input: {},
+      initiatedBy: 'unit-test',
+    });
+
+    const eventTypes = harness.events.map((event) => event.type);
+
+    // workflow.started must be the first event in the stream
+    expect(eventTypes[0]).toBe('workflow.started');
+
+    // workflow.started must appear before tool.called and llm.requested
+    const startedIndex  = eventTypes.indexOf('workflow.started');
+    const toolIndex     = eventTypes.indexOf('tool.called');
+    const llmIndex      = eventTypes.indexOf('llm.requested');
+
+    expect(startedIndex).toBeLessThan(toolIndex);
+    expect(startedIndex).toBeLessThan(llmIndex);
+  });
+});
