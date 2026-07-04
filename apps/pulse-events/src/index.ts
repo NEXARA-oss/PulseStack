@@ -79,7 +79,7 @@ const streamHandler: WebsocketHandler = async (socket, request) => {
     env.TENANT_ID,
   );
   const nc = await infra.nats();
-  const subscription = nc.subscribe('pulse.events.>');
+  const subscription = nc.subscribe(`pulse.events.${tenantId}.>`);
   (async () => {
     try {
       for await (const message of subscription) {
