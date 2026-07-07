@@ -1,10 +1,12 @@
 import { createBaseServer, loadEnv, PulseInfra, tenantIdFromHeaders } from '@pulsestack/core';
 import { CostOptimizationAnalyzer } from './cost-optimization.js';
+import { IncidentAnalyzer } from './incident-dashboard.js';
 
 const env = loadEnv();
 const infra = new PulseInfra();
 const app = await createBaseServer('pulse-metrics');
 const costOptimizer = new CostOptimizationAnalyzer(infra);
+const incidentAnalyzer = new IncidentAnalyzer(infra);
 
 app.get('/summary', async (request) => {
   const tenantId = tenantIdFromHeaders(
@@ -112,6 +114,106 @@ app.get('/optimization/underutilized', async (request) => {
     underutilizedServices: insights.underutilizedServices,
     totalUnderutilized: insights.underutilizedServices.length,
   };
+});
+
+// ── Incident Dashboard Endpoints ──────────────────────────────────────────────
+
+/**
+ * GET /incidents/dashboard
+ * Returns incident dashboard with active/recent incidents, trends, and stats
+ */
+app.get('/incidents/dashboard', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  return incidentAnalyzer.getDashboard(tenantId);
+});
+
+/**
+ * GET /incidents/:id
+ * Returns full incident detail including timeline, failures, alerts, recoveries
+ */
+app.get('/incidents/:id', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const { id } = request.params as { id: string };
+  const incident = await incidentAnalyzer.getIncident(id, tenantId);
+  if (!incident) {
+    return { error: 'Incident not found' };
+  }
+  return incident;
+});
+
+/**
+ * GET /incidents/:id/timeline
+ * Returns chronological incident timeline
+ */
+app.get('/incidents/:id/timeline', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const { id } = request.params as { id: string };
+  const incident = await incidentAnalyzer.getIncident(id, tenantId);
+  if (!incident) {
+    return { error: 'Incident not found' };
+  }
+  return { timeline: incident.timeline, total: incident.timeline.length };
+});
+
+/**
+ * GET /incidents/:id/failures
+ * Returns service failures for an incident
+ */
+app.get('/incidents/:id/failures', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const { id } = request.params as { id: string };
+  const incident = await incidentAnalyzer.getIncident(id, tenantId);
+  if (!incident) {
+    return { error: 'Incident not found' };
+  }
+  return {
+    failures: incident.failures,
+    totalFailures: incident.failureCount,
+    affectedServices: incident.affectedServices,
+  };
+});
+
+/**
+ * GET /incidents/:id/export
+ * Exports incident report as structured data
+ */
+app.get('/incidents/:id/export', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const { id } = request.params as { id: string };
+  const report = await incidentAnalyzer.exportIncidentReport(id, tenantId);
+  if (!report) {
+    return { error: 'Incident not found' };
+  }
+  return report;
+});
+
+/**
+ * POST /incidents/:id/root-cause
+ * Add a root cause note to an incident
+ */
+app.post('/incidents/:id/root-cause', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const { id } = request.params as { id: string };
+  const note = await incidentAnalyzer.addRootCauseNote(id, request.body as any);
+  return note;
 });
 
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });
