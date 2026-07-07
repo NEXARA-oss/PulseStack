@@ -1,4 +1,5 @@
 import type { WebsocketHandler } from '@fastify/websocket';
+import rateLimit from '@fastify/rate-limit';
 import {
   createBaseServer,
   createEvent,
@@ -21,6 +22,16 @@ const env = loadEnv();
 initializeTracing(env);
 const infra = new PulseInfra();
 const app = await createBaseServer('pulse-events');
+
+await app.register(rateLimit, {
+  max: 60,
+  timeWindow: '1 minute',
+  skip: (request) => request.url !== '/ingest',
+  keyGenerator: (request) => {
+    const tenantId = request.headers['x-tenant-id'] ?? 'unknown';
+    return Array.isArray(tenantId) ? tenantId[0] : tenantId;
+  },
+});
 
 app.post('/ingest', async (request, reply) => {
   const tenantId = tenantIdFromHeaders(
