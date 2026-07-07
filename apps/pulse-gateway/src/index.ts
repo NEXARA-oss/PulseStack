@@ -85,6 +85,20 @@ function requiredPermission(method: string, url: string): Permission | null {
   return null;
 }
 
+function authenticateRequest(request: JwtCapableRequest, reply: any): boolean {
+  const apiKey = request.headers['x-api-key'];
+  if (apiKey === env.API_KEY) {
+    request.user = { sub: 'api-key', tenantId: env.TENANT_ID, role: 'admin' };
+    return true;
+  }
+  const bearer = request.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (!bearer) {
+    reply.code(401).send({ message: 'Unauthorized: Missing or invalid authentication. Provide X-Api-Key header or Authorization bearer token.' });
+    return false;
+  }
+  return false;
+}
+
 app.addHook('preHandler', async (request, reply) => {
   const jwtRequest = request as unknown as JwtCapableRequest;
   const permission = requiredPermission(request.method, request.url);
@@ -93,13 +107,13 @@ app.addHook('preHandler', async (request, reply) => {
     jwtRequest.user = { sub: 'local', tenantId: env.TENANT_ID, role: 'admin' };
     return validateRequestTenant(jwtRequest, reply);
   }
-  const bearer = jwtRequest.headers.authorization?.replace(/^Bearer\s+/i, '');
   const apiKey = jwtRequest.headers['x-api-key'];
   if (apiKey === env.API_KEY) {
     jwtRequest.user = { sub: 'api-key', tenantId: env.TENANT_ID, role: 'admin' };
     return validateRequestTenant(jwtRequest, reply);
   }
-  if (!bearer) return reply.code(401).send({ message: 'Unauthorized' });
+  const bearer = jwtRequest.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (!bearer) return reply.code(401).send({ message: 'Unauthorized: Missing or invalid authentication. Provide X-Api-Key header or Authorization bearer token.' });
   const principal = await jwtRequest.jwtVerify();
   jwtRequest.user = principal;
   if (!can(principal, permission)) return reply.code(403).send({ message: 'Forbidden', permission });
