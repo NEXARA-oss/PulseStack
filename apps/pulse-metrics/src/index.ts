@@ -1,12 +1,14 @@
 import { createBaseServer, loadEnv, PulseInfra, tenantIdFromHeaders } from '@pulsestack/core';
 import { CostOptimizationAnalyzer } from './cost-optimization.js';
 import { IncidentAnalyzer } from './incident-dashboard.js';
+import { ServiceHealthAnalyzer } from './service-health.js';
 
 const env = loadEnv();
 const infra = new PulseInfra();
 const app = await createBaseServer('pulse-metrics');
 const costOptimizer = new CostOptimizationAnalyzer(infra);
 const incidentAnalyzer = new IncidentAnalyzer(infra);
+const healthAnalyzer = new ServiceHealthAnalyzer(infra);
 
 app.get('/summary', async (request) => {
   const tenantId = tenantIdFromHeaders(
@@ -214,6 +216,75 @@ app.post('/incidents/:id/root-cause', async (request) => {
   const { id } = request.params as { id: string };
   const note = await incidentAnalyzer.addRootCauseNote(id, request.body as any);
   return note;
+});
+
+// ── Service Health Dashboard Endpoints ─────────────────────────────────────────
+
+/**
+ * GET /health/dashboard
+ * Returns full service health dashboard with all service status cards
+ */
+app.get('/health/dashboard', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  return healthAnalyzer.getDashboard(tenantId);
+});
+
+/**
+ * GET /health/snapshot
+ * Returns lightweight health snapshot for auto-refresh monitoring
+ */
+app.get('/health/snapshot', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  return healthAnalyzer.getSnapshot(tenantId);
+});
+
+/**
+ * GET /health/services/:serviceId
+ * Returns individual service health card
+ */
+app.get('/health/services/:serviceId', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const { serviceId } = request.params as { serviceId: string };
+  const card = await healthAnalyzer.getServiceHealth(serviceId, tenantId);
+  if (!card) {
+    return { error: 'Service not found' };
+  }
+  return card;
+});
+
+/**
+ * GET /health/search
+ * Search services by name query parameter: ?q=<search-term>
+ */
+app.get('/health/search', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const query = (request.query as { q?: string })?.q ?? '';
+  return healthAnalyzer.searchServices(query, tenantId);
+});
+
+/**
+ * GET /health/filter/:status
+ * Filter services by health status (healthy, degraded, unhealthy, down, all)
+ */
+app.get('/health/filter/:status', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const { status } = request.params as { status: string };
+  return healthAnalyzer.filterByStatus(status as any, tenantId);
 });
 
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });
