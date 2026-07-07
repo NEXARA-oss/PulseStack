@@ -28,4 +28,6 @@ create table if not exists pulsestack.traces (
   attributes String,
   error String
 ) engine = MergeTree
-order by (started_at, execution_id, trace_id);
+order by (started_at, execution_id, trace_id)
+index idx_traces_execution_id execution_id type hash(4) granularity 4,
+index idx_traces_status status type set(100) granularity 10;
