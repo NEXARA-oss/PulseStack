@@ -199,7 +199,7 @@ export class PulseInfra {
 
   async writeEvent(event: EventEnvelope) {
     const nc = await this.nats();
-    nc.publish(`pulse.events.${event.type}`, codec.encode(JSON.stringify(event)));
+    nc.publish(`pulse.events.${event.tenantId}.${event.type}`, codec.encode(JSON.stringify(event)),);
     await this.redis.xadd('pulse:events', '*', 'event', JSON.stringify(event));
     await this.clickhouse.insert({
       table: 'events',
