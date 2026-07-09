@@ -11,6 +11,9 @@ import {
   type SnapshotInspection,
   type SnapshotTimelineItem,
 } from './components/SnapshotDebugger';
+import { EnhancedLogExplorer } from './components/EnhancedLogExplorer';
+import { AnomalyDashboard } from './components/AnomalyDashboard';
+import { SloDashboard } from './components/SloDashboard';
 import { useWorkflowReplay, type WorkflowEvent } from './hooks/useWorkflowReplay';
 import { fetchJson, postJson } from './lib/api';
 import { useUiStore } from './store/ui';
@@ -111,7 +114,7 @@ export default function App() {
   const setSelectedExecutionId = useUiStore((state) => state.setSelectedExecutionId);
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
-  const [activeTab, setActiveTab] = useState<'monitor' | 'replay'>('monitor');
+  const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'logs' | 'anomaly' | 'slo'>('monitor');
   const [selectedSnapshotSequence, setSelectedSnapshotSequence] = useState<number | null>(null);
   const [replayRun, setReplayRun] = useState<ReplayResponse | null>(null);
   const [isStartingReplay, setIsStartingReplay] = useState(false);
@@ -378,6 +381,36 @@ export default function App() {
                   Realtime Monitor
                 </button>
                 <button
+                  onClick={() => setActiveTab('logs')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'logs'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Log Explorer
+                </button>
+                <button
+                  onClick={() => setActiveTab('anomaly')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'anomaly'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Anomaly Detection
+                </button>
+                <button
+                  onClick={() => setActiveTab('slo')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'slo'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  SLO/SLA
+                </button>
+                <button
                   onClick={() => setActiveTab('replay')}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     activeTab === 'replay'
@@ -458,6 +491,12 @@ export default function App() {
                   )}
                 </Panel>
               </div>
+            ) : activeTab === 'logs' ? (
+              <EnhancedLogExplorer />
+            ) : activeTab === 'anomaly' ? (
+              <AnomalyDashboard />
+            ) : activeTab === 'slo' ? (
+              <SloDashboard />
             ) : (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">

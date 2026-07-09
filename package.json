@@ -12,10 +12,10 @@
     "format": "prettier --write ."
   },
   "devDependencies": {
+    "@types/node": "^24.7.2",
     "@types/pg": "^8.15.5",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
-    "@types/node": "^24.7.2",
     "@typescript-eslint/eslint-plugin": "^8.42.0",
     "@typescript-eslint/parser": "^8.42.0",
     "eslint": "^9.35.0",
@@ -34,5 +34,8 @@
       "vitest": "^3.2.4",
       "eslint": "^9.35.0"
     }
+  },
+  "dependencies": {
+    "recharts": "^3.9.2"
   }
 }
