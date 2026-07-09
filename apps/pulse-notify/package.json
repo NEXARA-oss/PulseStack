@@ -1,0 +1,13 @@
+{
+  "name": "@pulsestack/pulse-notify",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./engine": "./src/engine.ts"
+  },
+  "dependencies": {
+    "@pulsestack/core": "workspace:*"
+  }
+}
