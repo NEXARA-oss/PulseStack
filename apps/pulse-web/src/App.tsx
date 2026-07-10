@@ -11,6 +11,8 @@ import {
   type SnapshotInspection,
   type SnapshotTimelineItem,
 } from './components/SnapshotDebugger';
+import { EnhancedLogExplorer } from './components/EnhancedLogExplorer';
+import { WorkspacesDashboard } from './components/WorkspacesDashboard';
 import { useWorkflowReplay, type WorkflowEvent } from './hooks/useWorkflowReplay';
 import { fetchJson, postJson } from './lib/api';
 import { useUiStore } from './store/ui';
@@ -111,7 +113,7 @@ export default function App() {
   const setSelectedExecutionId = useUiStore((state) => state.setSelectedExecutionId);
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
-  const [activeTab, setActiveTab] = useState<'monitor' | 'replay'>('monitor');
+  const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'workspaces'>('monitor');
   const [selectedSnapshotSequence, setSelectedSnapshotSequence] = useState<number | null>(null);
   const [replayRun, setReplayRun] = useState<ReplayResponse | null>(null);
   const [isStartingReplay, setIsStartingReplay] = useState(false);
@@ -387,6 +389,16 @@ export default function App() {
                 >
                   Replay Simulator
                 </button>
+                <button
+                  onClick={() => setActiveTab('workspaces')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'workspaces'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Workspaces
+                </button>
               </div>
 
               <div className="flex items-center gap-2 text-xs font-mono bg-black/25 px-3 py-1.5 rounded-lg border border-white/5">
@@ -428,6 +440,93 @@ export default function App() {
                       </ReactFlow>
                     )}
                   </div>
+                </Panel>
+
+                <Panel title="Trace Timeline">
+                  {trace.isLoading ? (
+                    <LoadingStack rows={4} minHeight="min-h-[300px]" />
+                  ) : trace.isError ? (
+                    <DashboardError
+                      title="Trace spans unavailable"
+                      message={getErrorMessage(trace.error)}
+                      minHeight="min-h-[300px]"
+                      isRetrying={trace.isFetching}
+                      onRetry={() => void trace.refetch()}
+                    />
+                  ) : !trace.data || trace.data.length === 0 ? (
+                    <DashboardEmpty title="No traces recorded" message="Trace spans will appear after instrumentation emits them." minHeight="min-h-[300px]" />
+                  ) : (
+                    <div className="space-y-2 max-h-[300px] min-h-[300px] overflow-y-auto pr-1">
+                      {trace.data.map((span) => (
+                        <div key={`${span.span_id}-${span.started_at}`} className="rounded-xl border border-white/10 bg-black/20 p-3 hover:bg-black/30 transition-colors">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-semibold text-sm">{span.name}</span>
+                            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-white/5 text-mint border border-white/5">{span.kind}</span>
+                          </div>
+                          <div className="font-mono text-[10px] text-white/40 mt-1">{span.started_at}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Panel>
+              </div>
+            ) : activeTab === 'workspaces' ? (
+              <WorkspacesDashboard />
+            ) : (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    PulseStack Replay Viewer
+                  </h3>
+                  <span className="bg-cyan/15 text-cyan border border-cyan/30 px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                    Advanced Tier
+                  </span>
+                </div>
+
+                <WorkflowGraph events={MOCK_EVENTS} currentIndex={replayState.currentStepIndex} />
+                <ReplayScrubber events={MOCK_EVENTS} replayState={replayState} />
+                <Panel title="Replay Usage">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="font-mono text-xs text-white/50">
+                      {replayRun?.replaySessionId ? `session ${shortId(replayRun.replaySessionId)}` : 'no replay session'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void startReplay()}
+                      disabled={!selectedExecutionId || isStartingReplay}
+                      className="rounded-lg border border-cyan/30 bg-cyan/10 px-3 py-1.5 text-xs font-semibold text-cyan transition hover:bg-cyan/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isStartingReplay ? 'Starting...' : 'Run Replay'}
+                    </button>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <UsageCard title="Original" usage={replayRun?.originalUsage ?? executionUsage.data?.usage} />
+                    <UsageCard title="Replay" usage={replayRun?.replayUsage} />
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                      <div className="text-xs font-bold uppercase tracking-wider text-white/50">Replay Delta</div>
+                      <div className="mt-3 font-mono text-2xl text-white">
+                        {formatNumber(replayRun?.usageComparison?.totalTokensDelta)}
+                      </div>
+                      <div className="text-xs uppercase text-white/50">
+                        {formatCost(replayRun?.usageComparison?.totalCostDelta)}
+                      </div>
+                    </div>
+                  </div>
+                </Panel>
+                <SnapshotDebugger
+                  timeline={snapshotTimeline.data}
+                  inspection={selectedSnapshot.data}
+                  selectedSequence={selectedSnapshotSequence}
+                  isLoading={snapshotTimeline.isLoading}
+                  isInspectionLoading={selectedSnapshot.isLoading}
+                  error={snapshotTimeline.error}
+                  onSelectSequence={setSelectedSnapshotSequence}
+                  onRetry={() => void snapshotTimeline.refetch()}
+                />
+              </div>
+            )}
+          </div>
+        </div>
                 </Panel>
 
                 <Panel title="Trace Timeline">
