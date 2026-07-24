@@ -1,12 +1,10 @@
 import { createBaseServer, loadEnv, PulseInfra, tenantIdFromHeaders } from '@pulsestack/core';
 import { CostOptimizationAnalyzer } from './cost-optimization.js';
-import { IncidentAnalyzer } from './incident-dashboard.js';
 
 const env = loadEnv();
 const infra = new PulseInfra();
 const app = await createBaseServer('pulse-metrics');
 const costOptimizer = new CostOptimizationAnalyzer(infra);
-const incidentAnalyzer = new IncidentAnalyzer(infra);
 
 app.get('/summary', async (request) => {
   const tenantId = tenantIdFromHeaders(
@@ -116,6 +114,7 @@ app.get('/optimization/underutilized', async (request) => {
   };
 });
 
+Incident_timeline
 // ── Incident Dashboard Endpoints ──────────────────────────────────────────────
 
 /**
@@ -215,5 +214,4 @@ app.post('/incidents/:id/root-cause', async (request) => {
   const note = await incidentAnalyzer.addRootCauseNote(id, request.body as any);
   return note;
 });
-
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });
