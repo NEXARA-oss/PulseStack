@@ -413,7 +413,10 @@ export class CostOptimizationAnalyzer {
     const successRate = succeeded / total;
 
     const totalCost = this.computeTotalCost(executions);
-    const avgCostPerExecution = totalCost / total;
+    // Guarded explicitly even though `total === 0` is handled above — protects
+    // against future refactors (e.g. this logic being extracted/reused
+    // elsewhere) that might drop that earlier guard.
+    const avgCostPerExecution = total ? totalCost / total : 0;
 
     const totalWorkflows = new Set(executions.map((e) => e.workflow_id)).size;
     const idleResourceRatio = totalWorkflows > 0 ? idleResources.length / totalWorkflows : 0;
@@ -537,15 +540,30 @@ export class CostOptimizationAnalyzer {
     }, 0);
   }
 
+  /**
+   * Estimates the current monthly cost of a workflow using actual spend from
+   * the trailing 30-day window, rather than extrapolating from the
+   * all-time average cost per execution. Averaging over the full history and
+   * multiplying by 30 produces a number that has no relationship to real
+   * monthly spend once executions span more than ~a month (e.g. two
+   * executions total, both a year old, would still report a nonzero
+   * "monthly" cost under the old logic).
+   */
   private estimateMonthlyCost(
     executions: ExecutionRecord[],
     usageData: Map<string, UsageMetadata>,
   ): number {
-    const totalCost = executions.reduce((sum, exec) => {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const recentExecutions = executions.filter(
+      (exec) => new Date(exec.created_at) >= thirtyDaysAgo,
+    );
+
+    return recentExecutions.reduce((sum, exec) => {
       const usage = usageData.get(exec.id);
       return sum + (usage?.totalCost ?? 0);
     }, 0);
-    return executions.length > 0 ? (totalCost / executions.length) * 30 : 0;
   }
 
   private analyzeModelUsage(
