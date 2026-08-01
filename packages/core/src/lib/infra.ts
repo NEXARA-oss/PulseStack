@@ -222,6 +222,17 @@ export class PulseInfra {
   }
 
   async writeSpan(span: TraceSpan) {
+    const existingSpan = await this.clickhouse.query({
+      query: `select 1 from traces where trace_id = {traceId:String} and span_id = {spanId:String} limit 1`,
+      query_params: { traceId: span.traceId, spanId: span.spanId },
+      format: 'JSONEachRow',
+    });
+
+    const rows = (await existingSpan.json()) as Array<Record<string, unknown>>;
+    if (rows.length > 0) {
+      return;
+    }
+
     await this.clickhouse.insert({
       table: 'traces',
       values: [
