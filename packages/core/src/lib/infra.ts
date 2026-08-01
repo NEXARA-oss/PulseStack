@@ -1,5 +1,6 @@
 import { createClient } from '@clickhouse/client';
 import type { EventEnvelope, ExecutionSnapshot, TraceSpan, UsageMetadata, WorkflowDefinition } from '@pulsestack/contracts';
+import { createHash, timingSafeEqual } from 'crypto';
 import { Redis } from 'ioredis';
 import { connect, type NatsConnection, StringCodec } from 'nats';
 import { Pool } from 'pg';
@@ -7,6 +8,19 @@ import { loadEnv } from './config.js';
 import { aggregateUsage } from './usage.js';
 
 const codec = StringCodec();
+
+function hashApiKey(key: string): string {
+  return createHash('sha256').update(key).digest('hex');
+}
+
+export function verifyApiKey(providedKey: string, hashedKey: string): boolean {
+  try {
+    const hash = hashApiKey(providedKey);
+    return timingSafeEqual(Buffer.from(hash), Buffer.from(hashedKey));
+  } catch {
+    return false;
+  }
+}
 
 export type ExecutionRecord = {
   id: string;
@@ -359,6 +373,27 @@ export class PulseInfra {
         recent: recentExecutions.rows,
       },
     };
+  }
+
+  async storeApiKeyHash(agentId: string, keyHash: string, tenantId?: string) {
+    await this.pg.query(
+      `insert into api_keys (id, agent_id, key_hash, tenant_id, created_at)
+       values (gen_random_uuid(), $1, $2, $3, now())`,
+      [agentId, keyHash, tenantId ?? this.env.TENANT_ID],
+    );
+  }
+
+  async verifyAgentApiKey(agentId: string, providedKey: string, tenantId?: string) {
+    const result = await this.pg.query<{ key_hash: string }>(
+      tenantId
+        ? `select key_hash from api_keys where agent_id = $1 and tenant_id = $2 limit 1`
+        : `select key_hash from api_keys where agent_id = $1 limit 1`,
+      tenantId ? [agentId, tenantId] : [agentId],
+    );
+
+    if (result.rows.length === 0) return false;
+    const storedHash = result.rows[0].key_hash;
+    return verifyApiKey(providedKey, storedHash);
   }
 
   async shutdown() {
