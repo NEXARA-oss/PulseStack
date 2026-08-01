@@ -8,6 +8,18 @@ import { aggregateUsage } from './usage.js';
 
 const codec = StringCodec();
 
+function sanitizeHtml(input: string): string {
+  if (typeof input !== 'string') return '';
+  const htmlEscapeMap: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return input.replace(/[&<>"']/g, (char) => htmlEscapeMap[char] || char);
+}
+
 export type ExecutionRecord = {
   id: string;
   workflow_id: string;
@@ -222,6 +234,16 @@ export class PulseInfra {
   }
 
   async writeSpan(span: TraceSpan) {
+    const sanitizedAttributes = span.attributes
+      ? Object.entries(span.attributes).reduce(
+          (acc, [key, value]) => ({
+            ...acc,
+            [key]: typeof value === 'string' ? sanitizeHtml(value) : value,
+          }),
+          {},
+        )
+      : {};
+
     await this.clickhouse.insert({
       table: 'traces',
       values: [
@@ -231,13 +253,13 @@ export class PulseInfra {
           trace_id: span.traceId,
           execution_id: span.executionId,
           workflow_id: span.workflowId,
-          name: span.name,
+          name: sanitizeHtml(span.name),
           kind: span.kind,
           status: span.status,
           started_at: span.startedAt,
           ended_at: span.endedAt ?? '',
-          attributes: JSON.stringify(span.attributes),
-          error: span.error ?? '',
+          attributes: JSON.stringify(sanitizedAttributes),
+          error: sanitizeHtml(span.error ?? ''),
         },
       ],
       format: 'JSONEachRow',
