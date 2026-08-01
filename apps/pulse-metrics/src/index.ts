@@ -217,6 +217,7 @@ app.post('/incidents/:id/root-cause', async (request) => {
   const note = await incidentAnalyzer.addRootCauseNote(id, request.body as any);
   return note;
 });
+ realtime_services
 
 // ── Service Health Dashboard Endpoints ─────────────────────────────────────────
 
@@ -286,5 +287,6 @@ app.get('/health/filter/:status', async (request) => {
   const { status } = request.params as { status: string };
   return healthAnalyzer.filterByStatus(status as any, tenantId);
 });
+
 
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });
