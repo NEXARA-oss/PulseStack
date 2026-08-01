@@ -291,6 +291,52 @@ export class PulseInfra {
     });
   }
 
+  async readTracePaginated(
+    executionId: string,
+    parentSpanId?: string | null,
+    limit = 50,
+    tenantId?: string,
+  ) {
+    if (tenantId) {
+      const execution = await this.getExecution(executionId, tenantId);
+      if (!execution) return { spans: [], total: 0 };
+    }
+
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+
+    const countResult = await this.clickhouse.query({
+      query: parentSpanId
+        ? `select count() as total from traces where execution_id = {executionId:String} and parent_span_id = {parentSpanId:String}`
+        : `select count() as total from traces where execution_id = {executionId:String} and parent_span_id = ''`,
+      query_params: { executionId, parentSpanId: parentSpanId ?? '' },
+      format: 'JSONEachRow',
+    });
+    const countRows = (await countResult.json()) as Array<{ total: number }>;
+    const total = countRows[0]?.total ?? 0;
+
+    const spansResult = await this.clickhouse.query({
+      query: parentSpanId
+        ? `select span_id, parent_span_id, trace_id, execution_id, workflow_id, name, kind, status, started_at, ended_at, attributes, error, countIf(parent_span_id = span_id) as child_count from traces where execution_id = {executionId:String} and parent_span_id = {parentSpanId:String} group by span_id, parent_span_id, trace_id, execution_id, workflow_id, name, kind, status, started_at, ended_at, attributes, error order by started_at asc limit {limit:UInt32}`
+        : `select span_id, parent_span_id, trace_id, execution_id, workflow_id, name, kind, status, started_at, ended_at, attributes, error, countIf(parent_span_id = span_id) as child_count from traces where execution_id = {executionId:String} and parent_span_id = '' group by span_id, parent_span_id, trace_id, execution_id, workflow_id, name, kind, status, started_at, ended_at, attributes, error order by started_at asc limit {limit:UInt32}`,
+      query_params: { executionId, parentSpanId: parentSpanId ?? '', limit: safeLimit },
+      format: 'JSONEachRow',
+    });
+    const rows = (await spansResult.json()) as Array<Record<string, unknown>>;
+
+    return {
+      spans: rows.map((row) => {
+        const attributes = parseJsonRecord(row.attributes);
+        return {
+          ...row,
+          attributes,
+          childCount: Number(row.child_count ?? 0),
+        };
+      }),
+      total,
+      limit: safeLimit,
+    };
+  }
+
   async readMetrics(tenantId?: string) {
     const [totals, latency, executionTotals, recentExecutions] = await Promise.all([
       this.clickhouse.query({
