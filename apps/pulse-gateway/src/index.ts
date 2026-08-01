@@ -77,6 +77,7 @@ function requiredPermission(method: string, url: string): Permission | null {
   if (url.startsWith('/api/runtime/workflows')) return 'execution:read';
   if (url.startsWith('/api/runtime/tenants')) return 'execution:read';
   if (url.startsWith('/api/events')) return 'event:read';
+  if (url.startsWith('/api/traces') && method === 'DELETE') return 'trace:write';
   if (url.startsWith('/api/traces')) return 'trace:read';
   if (url.startsWith('/api/graph')) return 'graph:read';
   if (url.startsWith('/api/metrics')) return 'metric:read';
@@ -162,6 +163,12 @@ app.get('/api/events/recent', async (request) =>
 );
 app.get('/api/traces/:executionId', async (request) =>
   proxyJson(`${services.trace}/executions/${(request.params as { executionId: string }).executionId}`, {
+    headers: request.headers,
+  }),
+);
+app.delete('/api/traces/:executionId', async (request) =>
+  proxyJson(`${services.trace}/executions/${(request.params as { executionId: string }).executionId}`, {
+    method: 'DELETE',
     headers: request.headers,
   }),
 );

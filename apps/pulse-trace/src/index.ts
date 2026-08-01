@@ -35,4 +35,13 @@ app.get('/executions/:executionId/snapshots', async (request) => {
   return { spans, snapshots };
 });
 
+app.delete('/executions/:executionId', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  const executionId = (request.params as { executionId: string }).executionId;
+  return infra.deleteTrace(executionId, executionId, tenantId);
+});
+
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });

@@ -291,6 +291,18 @@ export class PulseInfra {
     });
   }
 
+  async deleteTrace(traceId: string, executionId: string, tenantId?: string) {
+    if (tenantId) {
+      const execution = await this.getExecution(executionId, tenantId);
+      if (!execution) return { deleted: false, error: 'Execution not found' };
+    }
+    const result = await this.clickhouse.query({
+      query: `alter table traces delete where trace_id = {traceId:String}`,
+      query_params: { traceId },
+    });
+    return { deleted: true };
+  }
+
   async readMetrics(tenantId?: string) {
     const [totals, latency, executionTotals, recentExecutions] = await Promise.all([
       this.clickhouse.query({
