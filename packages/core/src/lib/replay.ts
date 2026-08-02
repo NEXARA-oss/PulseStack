@@ -143,7 +143,7 @@ export class ReplayEngine {
       usage: inspection.usage,
       traceId: inspection.traceId,
       spanId: inspection.spanId,
-      stateKeys: Object.keys(inspection.snapshot.state).sort(),
+      stateKeys: Object.keys(inspection.snapshot.state).sort((a, b) => a - b),
       diffSummary: {
         added: inspection.diff.added.length,
         modified: inspection.diff.modified.length,
@@ -197,14 +197,14 @@ export class ReplayEngine {
 
   private async getExecutionSnapshots(executionId: string, tenantId?: string) {
     const rows = await this.infra.getSnapshots(executionId, tenantId);
-    return rows.map(normalizeSnapshot);
+    return (rows ?? []).map(normalizeSnapshot);
   }
 }
 
 export function buildSnapshotInspections(
   snapshots: ExecutionSnapshot[],
 ): SnapshotInspection[] {
-  return snapshots.map((snapshot, index) => {
+  return (snapshots ?? []).map((snapshot, index) => {
     const previous = index > 0 ? snapshots[index - 1] : undefined;
     const metadata = snapshotMetadata(snapshot);
     return {

@@ -20,7 +20,7 @@ function collectDiff(
   if (isPlainObject(before) && isPlainObject(after)) {
     const keys = Array.from(
       new Set([...Object.keys(before), ...Object.keys(after)]),
-    ).sort();
+    ).sort((a, b) => a - b);
     for (const key of keys) {
       const nextPath = path ? `${path}.${key}` : key;
       const hasBefore = Object.prototype.hasOwnProperty.call(before, key);
@@ -51,11 +51,11 @@ function sameValue(left: unknown, right: unknown) {
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(',')}]`;
+    return `[${(value ?? []).map(stableStringify).join(',')}]`;
   }
   if (isPlainObject(value)) {
     return `{${Object.keys(value)
-      .sort()
+      .sort((a, b) => a - b)
       .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
       .join(',')}}`;
   }
