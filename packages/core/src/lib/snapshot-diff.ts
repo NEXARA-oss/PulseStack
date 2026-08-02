@@ -51,7 +51,7 @@ function sameValue(left: unknown, right: unknown) {
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(',')}]`;
+    return `[${(value ?? []).map(stableStringify).join(',')}]`;
   }
   if (isPlainObject(value)) {
     return `{${Object.keys(value)

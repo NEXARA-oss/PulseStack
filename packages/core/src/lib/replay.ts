@@ -197,7 +197,7 @@ export class ReplayEngine {
 
   private async getExecutionSnapshots(executionId: string, tenantId?: string) {
     const rows = await this.infra.getSnapshots(executionId, tenantId);
-    return rows.map(normalizeSnapshot);
+    return (rows ?? []).map(normalizeSnapshot);
   }
 }
 
