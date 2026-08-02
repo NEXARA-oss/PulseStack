@@ -143,7 +143,7 @@ export class ReplayEngine {
       usage: inspection.usage,
       traceId: inspection.traceId,
       spanId: inspection.spanId,
-      stateKeys: Object.keys(inspection.snapshot.state).sort(),
+      stateKeys: Object.keys(inspection.snapshot.state).sort((a, b) => a - b),
       diffSummary: {
         added: inspection.diff.added.length,
         modified: inspection.diff.modified.length,
