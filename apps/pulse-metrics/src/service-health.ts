@@ -159,7 +159,7 @@ export class ServiceHealthAnalyzer {
     const dashboard = await this.getDashboard(tenantId);
     return {
       timestamp: dashboard.generatedAt,
-      services: dashboard.services.map((s) => ({
+      services: dashboard.(services ?? []).map((s) => ({
         serviceId: s.serviceId,
         status: s.status,
         uptimePercent: s.uptimePercent,
