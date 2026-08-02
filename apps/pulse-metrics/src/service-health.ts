@@ -379,7 +379,7 @@ export class ServiceHealthAnalyzer {
 
     return {
       status,
-      label: status.charAt(0).toUpperCase() + status.slice(1),
+      label: status[0].toUpperCase() + status.slice(1),
       description,
       score: avgScore,
     };
