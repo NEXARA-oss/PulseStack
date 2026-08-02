@@ -204,7 +204,7 @@ export class ReplayEngine {
 export function buildSnapshotInspections(
   snapshots: ExecutionSnapshot[],
 ): SnapshotInspection[] {
-  return snapshots.map((snapshot, index) => {
+  return (snapshots ?? []).map((snapshot, index) => {
     const previous = index > 0 ? snapshots[index - 1] : undefined;
     const metadata = snapshotMetadata(snapshot);
     return {
