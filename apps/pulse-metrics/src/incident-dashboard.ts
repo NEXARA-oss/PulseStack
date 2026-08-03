@@ -814,3 +814,4 @@ function safeParseJson(value: unknown): Record<string, unknown> {
     return {};
   }
 }
+.catch(err => console.error("Promise.all failed:", err));
