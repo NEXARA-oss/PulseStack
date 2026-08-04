@@ -439,7 +439,7 @@ function usageFromOutput(
 
 function modelFromOutput(output: Record<string, unknown> | undefined) {
   const steps = output?.steps;
-  if (!Array.isArray(steps)) return undefined;
+  if (!Array.isArray(steps)) return;
   const models = steps
     .map((step) =>
       step && typeof step === 'object'
