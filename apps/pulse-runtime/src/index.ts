@@ -119,7 +119,7 @@ app.get('/tenants/:tenantId/usage', async (request, reply) => {
   );
   const requestedTenantId = (request.params as { tenantId: string }).tenantId;
   if (requestedTenantId !== tenantId) {
-    return reply.code(403).send({ message: 'Request tenant does not match route tenant' });
+    return reply.code(403).send({ message: 'Forbidden: Tenant isolation violation. Cannot access data for different tenant.' });
   }
   return infra.getTenantUsage(tenantId);
 });
