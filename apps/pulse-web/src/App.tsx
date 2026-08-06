@@ -15,6 +15,7 @@ import { EnhancedLogExplorer } from './components/EnhancedLogExplorer';
 import { AnomalyDashboard } from './components/AnomalyDashboard';
 import { SloDashboard } from './components/SloDashboard';
 import { NotificationsDashboard } from './components/NotificationsDashboard';
+import { ApiAnalyticsDashboard } from './components/ApiAnalyticsDashboard';
 import { useWorkflowReplay, type WorkflowEvent } from './hooks/useWorkflowReplay';
 import { fetchJson, postJson } from './lib/api';
 import { useUiStore } from './store/ui';
@@ -115,7 +116,7 @@ export default function App() {
   const setSelectedExecutionId = useUiStore((state) => state.setSelectedExecutionId);
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
-  const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'logs' | 'anomaly' | 'slo' | 'notify'>('monitor');
+  const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'logs' | 'anomaly' | 'slo' | 'notify' | 'api'>('monitor');
   const [selectedSnapshotSequence, setSelectedSnapshotSequence] = useState<number | null>(null);
   const [replayRun, setReplayRun] = useState<ReplayResponse | null>(null);
   const [isStartingReplay, setIsStartingReplay] = useState(false);
