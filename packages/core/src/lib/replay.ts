@@ -261,7 +261,7 @@ function parseJson(value: string) {
   try {
     return JSON.parse(value);
   } catch {
-    return undefined;
+    return;
   }
 }
 
