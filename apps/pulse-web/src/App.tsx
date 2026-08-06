@@ -380,6 +380,46 @@ export default function App() {
                   Realtime Monitor
                 </button>
                 <button
+                  onClick={() => setActiveTab('logs')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'logs'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Log Explorer
+                </button>
+                <button
+                  onClick={() => setActiveTab('anomaly')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'anomaly'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Anomaly Detection
+                </button>
+                <button
+                  onClick={() => setActiveTab('slo')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'slo'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  SLO/SLA
+                </button>
+                <button
+                  onClick={() => setActiveTab('notify')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'notify'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Notifications
+                </button>
+                <button
                   onClick={() => setActiveTab('replay')}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     activeTab === 'replay'
@@ -390,14 +430,14 @@ export default function App() {
                   Replay Simulator
                 </button>
                 <button
-                  onClick={() => setActiveTab('configs')}
+                  onClick={() => setActiveTab('trends')}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                    activeTab === 'configs'
+                    activeTab === 'trends'
                       ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
                       : 'text-white/60 hover:text-white border border-transparent'
                   }`}
                 >
-                  Config History
+                  Trend Analytics
                 </button>
               </div>
 
@@ -470,8 +510,14 @@ export default function App() {
                   )}
                 </Panel>
               </div>
-            ) : activeTab === 'configs' ? (
-              <ConfigVersionDashboard />
+            ) : activeTab === 'logs' ? (
+              <EnhancedLogExplorer />
+            ) : activeTab === 'anomaly' ? (
+              <AnomalyDashboard />
+            ) : activeTab === 'slo' ? (
+              <SloDashboard />
+            ) : activeTab === 'notify' ? (
+              <NotificationsDashboard />
             ) : (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -524,91 +570,8 @@ export default function App() {
                   onRetry={() => void snapshotTimeline.refetch()}
                 />
               </div>
-            )}
-          </div>
-        </div>
-                </Panel>
-
-                <Panel title="Trace Timeline">
-                  {trace.isLoading ? (
-                    <LoadingStack rows={4} minHeight="min-h-[300px]" />
-                  ) : trace.isError ? (
-                    <DashboardError
-                      title="Trace spans unavailable"
-                      message={getErrorMessage(trace.error)}
-                      minHeight="min-h-[300px]"
-                      isRetrying={trace.isFetching}
-                      onRetry={() => void trace.refetch()}
-                    />
-                  ) : !trace.data || trace.data.length === 0 ? (
-                    <DashboardEmpty title="No traces recorded" message="Trace spans will appear after instrumentation emits them." minHeight="min-h-[300px]" />
-                  ) : (
-                    <div className="space-y-2 max-h-[300px] min-h-[300px] overflow-y-auto pr-1">
-                      {trace.data.map((span) => (
-                        <div key={`${span.span_id}-${span.started_at}`} className="rounded-xl border border-white/10 bg-black/20 p-3 hover:bg-black/30 transition-colors">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="font-semibold text-sm">{span.name}</span>
-                            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-white/5 text-mint border border-white/5">{span.kind}</span>
-                          </div>
-                          <div className="font-mono text-[10px] text-white/40 mt-1">{span.started_at}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Panel>
-              </div>
             ) : (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    PulseStack Replay Viewer
-                  </h3>
-                  <span className="bg-cyan/15 text-cyan border border-cyan/30 px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                    Advanced Tier
-                  </span>
-                </div>
-
-                <WorkflowGraph events={MOCK_EVENTS} currentIndex={replayState.currentStepIndex} />
-                <ReplayScrubber events={MOCK_EVENTS} replayState={replayState} />
-                <Panel title="Replay Usage">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="font-mono text-xs text-white/50">
-                      {replayRun?.replaySessionId ? `session ${shortId(replayRun.replaySessionId)}` : 'no replay session'}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void startReplay()}
-                      disabled={!selectedExecutionId || isStartingReplay}
-                      className="rounded-lg border border-cyan/30 bg-cyan/10 px-3 py-1.5 text-xs font-semibold text-cyan transition hover:bg-cyan/20 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isStartingReplay ? 'Starting...' : 'Run Replay'}
-                    </button>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <UsageCard title="Original" usage={replayRun?.originalUsage ?? executionUsage.data?.usage} />
-                    <UsageCard title="Replay" usage={replayRun?.replayUsage} />
-                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                      <div className="text-xs font-bold uppercase tracking-wider text-white/50">Replay Delta</div>
-                      <div className="mt-3 font-mono text-2xl text-white">
-                        {formatNumber(replayRun?.usageComparison?.totalTokensDelta)}
-                      </div>
-                      <div className="text-xs uppercase text-white/50">
-                        {formatCost(replayRun?.usageComparison?.totalCostDelta)}
-                      </div>
-                    </div>
-                  </div>
-                </Panel>
-                <SnapshotDebugger
-                  timeline={snapshotTimeline.data}
-                  inspection={selectedSnapshot.data}
-                  selectedSequence={selectedSnapshotSequence}
-                  isLoading={snapshotTimeline.isLoading}
-                  isInspectionLoading={selectedSnapshot.isLoading}
-                  error={snapshotTimeline.error}
-                  onSelectSequence={setSelectedSnapshotSequence}
-                  onRetry={() => void snapshotTimeline.refetch()}
-                />
-              </div>
+              <PerformanceTrendDashboard />
             )}
           </div>
         </div>
