@@ -12,6 +12,7 @@ import {
   type SnapshotTimelineItem,
 } from './components/SnapshotDebugger';
 import { EnhancedLogExplorer } from './components/EnhancedLogExplorer';
+import { AnomalyDashboard } from './components/AnomalyDashboard';
 import { PerformanceTrendDashboard } from './components/PerformanceTrendDashboard';
 import { useWorkflowReplay, type WorkflowEvent } from './hooks/useWorkflowReplay';
 import { fetchJson, postJson } from './lib/api';
@@ -113,6 +114,7 @@ export default function App() {
   const setSelectedExecutionId = useUiStore((state) => state.setSelectedExecutionId);
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
+  const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'logs' | 'anomaly'>('monitor');
   const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'trends'>('monitor');
   const [selectedSnapshotSequence, setSelectedSnapshotSequence] = useState<number | null>(null);
   const [replayRun, setReplayRun] = useState<ReplayResponse | null>(null);
@@ -390,6 +392,16 @@ export default function App() {
                   Log Explorer
                 </button>
                 <button
+                  onClick={() => setActiveTab('anomaly')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'anomaly'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Anomaly Detection
+                </button>
+                <button
                   onClick={() => setActiveTab('replay')}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     activeTab === 'replay'
@@ -480,6 +492,10 @@ export default function App() {
                   )}
                 </Panel>
               </div>
+            ) : activeTab === 'logs' ? (
+              <EnhancedLogExplorer />
+            ) : activeTab === 'anomaly' ? (
+              <AnomalyDashboard />
             ) : activeTab === 'alerts' ? (
               <AlertManagementCenter />
             ) : (
