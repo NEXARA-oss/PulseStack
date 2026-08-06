@@ -379,6 +379,16 @@ export default function App() {
                   Realtime Monitor
                 </button>
                 <button
+                  onClick={() => setActiveTab('services')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'services'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Service Graph
+                </button>
+                <button
                   onClick={() => setActiveTab('replay')}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     activeTab === 'replay'
