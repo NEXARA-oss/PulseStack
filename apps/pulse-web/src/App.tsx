@@ -12,6 +12,7 @@ import {
   type SnapshotTimelineItem,
 } from './components/SnapshotDebugger';
 import { EnhancedLogExplorer } from './components/EnhancedLogExplorer';
+import { PerformanceTrendDashboard } from './components/PerformanceTrendDashboard';
 import { useWorkflowReplay, type WorkflowEvent } from './hooks/useWorkflowReplay';
 import { fetchJson, postJson } from './lib/api';
 import { useUiStore } from './store/ui';
@@ -112,7 +113,7 @@ export default function App() {
   const setSelectedExecutionId = useUiStore((state) => state.setSelectedExecutionId);
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
-  const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'logs'>('monitor');
+  const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'trends'>('monitor');
   const [selectedSnapshotSequence, setSelectedSnapshotSequence] = useState<number | null>(null);
   const [replayRun, setReplayRun] = useState<ReplayResponse | null>(null);
   const [isStartingReplay, setIsStartingReplay] = useState(false);
@@ -398,6 +399,16 @@ export default function App() {
                 >
                   Replay Simulator
                 </button>
+                <button
+                  onClick={() => setActiveTab('trends')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'trends'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Trend Analytics
+                </button>
               </div>
 
               <div className="flex items-center gap-2 text-xs font-mono bg-black/25 px-3 py-1.5 rounded-lg border border-white/5">
@@ -469,8 +480,8 @@ export default function App() {
                   )}
                 </Panel>
               </div>
-            ) : activeTab === 'logs' ? (
-              <EnhancedLogExplorer />
+            ) : activeTab === 'alerts' ? (
+              <AlertManagementCenter />
             ) : (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -523,6 +534,8 @@ export default function App() {
                   onRetry={() => void snapshotTimeline.refetch()}
                 />
               </div>
+            ) : (
+              <PerformanceTrendDashboard />
             )}
           </div>
         </div>
