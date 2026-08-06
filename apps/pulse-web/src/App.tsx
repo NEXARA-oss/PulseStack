@@ -114,8 +114,7 @@ export default function App() {
   const setSelectedExecutionId = useUiStore((state) => state.setSelectedExecutionId);
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
-  const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'logs' | 'anomaly'>('monitor');
-  const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'trends'>('monitor');
+  const [activeTab, setActiveTab] = useState<'monitor' | 'replay' | 'logs' | 'anomaly' | 'slo'>('monitor');
   const [selectedSnapshotSequence, setSelectedSnapshotSequence] = useState<number | null>(null);
   const [replayRun, setReplayRun] = useState<ReplayResponse | null>(null);
   const [isStartingReplay, setIsStartingReplay] = useState(false);
@@ -496,8 +495,8 @@ export default function App() {
               <EnhancedLogExplorer />
             ) : activeTab === 'anomaly' ? (
               <AnomalyDashboard />
-            ) : activeTab === 'alerts' ? (
-              <AlertManagementCenter />
+            ) : activeTab === 'slo' ? (
+              <SloDashboard />
             ) : (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
