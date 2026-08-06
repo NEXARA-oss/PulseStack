@@ -601,14 +601,6 @@ export default function App() {
                   )}
                 </Panel>
               </div>
-            ) : activeTab === 'logs' ? (
-              <EnhancedLogExplorer />
-            ) : activeTab === 'anomaly' ? (
-              <AnomalyDashboard />
-            ) : activeTab === 'slo' ? (
-              <SloDashboard />
-            ) : activeTab === 'notify' ? (
-              <NotificationsDashboard />
             ) : (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
