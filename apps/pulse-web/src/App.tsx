@@ -13,7 +13,7 @@ import {
 } from './components/SnapshotDebugger';
 import { EnhancedLogExplorer } from './components/EnhancedLogExplorer';
 import { AnomalyDashboard } from './components/AnomalyDashboard';
-import { SloDashboard } from './components/SloDashboard';
+import { PerformanceTrendDashboard } from './components/PerformanceTrendDashboard';
 import { useWorkflowReplay, type WorkflowEvent } from './hooks/useWorkflowReplay';
 import { fetchJson, postJson } from './lib/api';
 import { useUiStore } from './store/ui';
@@ -401,16 +401,6 @@ export default function App() {
                   Anomaly Detection
                 </button>
                 <button
-                  onClick={() => setActiveTab('slo')}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                    activeTab === 'slo'
-                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
-                      : 'text-white/60 hover:text-white border border-transparent'
-                  }`}
-                >
-                  SLO/SLA
-                </button>
-                <button
                   onClick={() => setActiveTab('replay')}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     activeTab === 'replay'
@@ -419,6 +409,16 @@ export default function App() {
                   }`}
                 >
                   Replay Simulator
+                </button>
+                <button
+                  onClick={() => setActiveTab('trends')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'trends'
+                      ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
+                      : 'text-white/60 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Trend Analytics
                 </button>
               </div>
 
@@ -549,6 +549,8 @@ export default function App() {
                   onRetry={() => void snapshotTimeline.refetch()}
                 />
               </div>
+            ) : (
+              <PerformanceTrendDashboard />
             )}
           </div>
         </div>

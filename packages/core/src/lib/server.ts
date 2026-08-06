@@ -14,7 +14,10 @@ const tenantIdSchema = z.string().trim().min(1);
 export async function createBaseServer(service: string) {
   const env = loadEnv();
   const logger = createLogger(service);
-  const app = Fastify({ logger });
+  const app = Fastify({
+    logger,
+    bodyLimit: 1048576,
+  });
 
   // Restrict CORS to the configured frontend origin instead of using
   // origin: true, which reflects every incoming Origin header including
