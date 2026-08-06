@@ -29,4 +29,13 @@ app.get('/executions/:executionId/dag', async (request, reply) => {
   };
 });
 
+// Service Dependency Topology API
+app.get('/services/topology', async (request) => {
+  const tenantId = tenantIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>,
+    env.TENANT_ID,
+  );
+  return infra.readServiceTopology(tenantId);
+});
+
 await app.listen({ host: '0.0.0.0', port: env.HTTP_PORT });
