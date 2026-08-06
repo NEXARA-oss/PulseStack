@@ -379,6 +379,9 @@ export default function App() {
                   Realtime Monitor
                 </button>
                 <button
+                  onClick={() => setActiveTab('alerts')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'alerts'
                   onClick={() => setActiveTab('services')}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     activeTab === 'services'
@@ -479,7 +482,9 @@ export default function App() {
                   )}
                 </Panel>
               </div>
-            ) : activeTab === 'replay' ? (
+            ) : activeTab === 'alerts' ? (
+              <AlertManagementCenter />
+            ) : (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
