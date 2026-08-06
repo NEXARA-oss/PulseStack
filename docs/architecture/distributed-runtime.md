@@ -221,7 +221,7 @@ graph TD
 
 `PulseInfra.writeEvent()` performs three writes:
 
-1. Publish to NATS subject `pulse.events.${event.type}`.
+1. Publish to NATS subject `pulse.events.${event.tenantId}.${event.type}`.
 2. Append the serialized event to Redis Stream `pulse:events`.
 3. Insert an analytics row into ClickHouse table `events`.
 
@@ -239,8 +239,8 @@ sequenceDiagram
 
   C->>G: WS /ws/events
   G->>S: WS /stream
-  S->>N: subscribe pulse.events.>
-  R->>N: publish pulse.events.workflow.started
+  S->>N: subscribe pulse.events.<tenantId>.>
+  R->>N: publish pulse.events.<tenantId>.workflow.started
   N-->>S: event message
   S-->>G: event JSON
   G-->>C: event JSON
