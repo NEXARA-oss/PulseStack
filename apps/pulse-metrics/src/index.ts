@@ -18,75 +18,19 @@ app.get('/summary', async (request) => {
   return infra.readMetrics(tenantId);
 });
 
-// ── Cost Optimization Endpoints ────────────────────────────────────────────────
-
-/**
- * GET /optimization/insights
- * Returns comprehensive cost optimization insights including:
- * - Idle resource detection
- * - Underutilized service identification
- * - Resource efficiency score
- * - Cost-saving recommendations
- */
-app.get('/optimization/insights', async (request) => {
+// Performance Trends API
+app.get('/trends', async (request) => {
   const tenantId = tenantIdFromHeaders(
     request.headers as Record<string, string | string[] | undefined>,
     env.TENANT_ID,
   );
-  return costOptimizer.getOptimizationInsights(tenantId);
+  const url = new URL(request.url, `http://${request.headers.host ?? 'localhost'}`);
+  const range = url.searchParams.get('range') ?? '7d';
+  return infra.readTrends(tenantId, range);
 });
 
-/**
- * GET /optimization/report
- * Returns a monthly optimization report with:
- * - Period summary
- * - Cost and execution trends
- * - Efficiency score breakdown
- * - Detailed recommendations
- */
-app.get('/optimization/report', async (request) => {
-  const tenantId = tenantIdFromHeaders(
-    request.headers as Record<string, string | string[] | undefined>,
-    env.TENANT_ID,
-  );
-  return costOptimizer.getMonthlyReport(tenantId);
-});
-
-/**
- * GET /optimization/efficiency-score
- * Returns just the resource efficiency score
- */
-app.get('/optimization/efficiency-score', async (request) => {
-  const tenantId = tenantIdFromHeaders(
-    request.headers as Record<string, string | string[] | undefined>,
-    env.TENANT_ID,
-  );
-  const insights = await costOptimizer.getOptimizationInsights(tenantId);
-  return insights.efficiencyScore;
-});
-
-/**
- * GET /optimization/recommendations
- * Returns prioritized cost-saving recommendations
- */
-app.get('/optimization/recommendations', async (request) => {
-  const tenantId = tenantIdFromHeaders(
-    request.headers as Record<string, string | string[] | undefined>,
-    env.TENANT_ID,
-  );
-  const insights = await costOptimizer.getOptimizationInsights(tenantId);
-  return {
-    recommendations: insights.recommendations,
-    estimatedTotalMonthlySavings: insights.estimatedTotalMonthlySavings,
-    generatedAt: insights.generatedAt,
-  };
-});
-
-/**
- * GET /optimization/idle-resources
- * Returns detected idle resources
- */
-app.get('/optimization/idle-resources', async (request) => {
+// Trend Export API
+app.get('/trends/export', async (request) => {
   const tenantId = tenantIdFromHeaders(
     request.headers as Record<string, string | string[] | undefined>,
     env.TENANT_ID,
