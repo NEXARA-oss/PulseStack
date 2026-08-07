@@ -514,8 +514,8 @@ export default function App() {
                   )}
                 </Panel>
               </div>
-            ) : activeTab === 'queryperf' ? (
-              <QueryPerformanceDashboard />
+            ) : activeTab === 'maintenance' ? (
+              <MaintenanceWindowDashboard />
             ) : (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
