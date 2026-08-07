@@ -430,18 +430,14 @@ export default function App() {
                   Replay Simulator
                 </button>
                 <button
-                  onClick={() => setActiveTab('queryperf')}
+                  onClick={() => setActiveTab('correlate')}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                    activeTab === 'queryperf'
-                  onClick={() => setActiveTab('trends')}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                    activeTab === 'trends'
+                    activeTab === 'correlate'
                       ? 'bg-cyan/20 text-cyan shadow-sm border border-cyan/30'
                       : 'text-white/60 hover:text-white border border-transparent'
                   }`}
                 >
-                  Query Perf
-                  Trend Analytics
+                  Correlation
                 </button>
               </div>
 
@@ -514,8 +510,8 @@ export default function App() {
                   )}
                 </Panel>
               </div>
-            ) : activeTab === 'maintenance' ? (
-              <MaintenanceWindowDashboard />
+            ) : activeTab === 'correlate' ? (
+              <MetricCorrelationDashboard />
             ) : (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
